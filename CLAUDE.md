@@ -58,7 +58,7 @@ test/
 ```
 
 - Dependencies point inward: presentation → application → domain. Infrastructure implements domain ports, and only `main.ts` (or a test) wires infrastructure in.
-- `createServer` takes its dependencies (port, probes) as arguments, so e2e tests run it with `port: 0`. A new feature adds its routes there and receives its adapters from `main.ts`.
+- `createServer` takes its dependencies (port, adapters) as arguments, so e2e tests run it with `port: 0`. A new feature adds its routes there and receives its adapters from `main.ts`.
 - Unit tests sit next to the file as `*.test.ts` and use fake ports, never real services.
 
 ## CI
