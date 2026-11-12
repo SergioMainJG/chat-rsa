@@ -1,0 +1,3 @@
+#!/bin/sh
+bun fmt --staged
+bun lint --staged --fix

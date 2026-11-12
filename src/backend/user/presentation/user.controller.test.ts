@@ -1,0 +1,166 @@
+import { describe, expect, test } from 'bun:test';
+
+import type { AuthResponse } from '../../../shared/contracts/auth.contract.ts';
+import type { ErrorResponse } from '../../../shared/contracts/error.contract.ts';
+import type { Logger } from '../../shared/domain/logger.ts';
+
+import { type AppError, ConflictError, UnauthorizedError, ValidationError } from '../../shared/domain/app.error.ts';
+import { err, ok, type Result } from '../../shared/domain/result.ts';
+import { type AuthUseCase, createAuthController } from './user.controller.ts';
+
+const session: AuthResponse = { token: 'jwt', user: { id: 1, name: 'alice' } };
+
+function post(path: string, body: string, headers: Record<string, string> = {}): Request {
+  return new Request(`http://localhost${path}`, {
+    body,
+    headers: { 'content-type': 'application/json', ...headers },
+    method: 'POST',
+  });
+}
+
+/** Use case that settles with the given result. */
+function returning(result: Result<AuthResponse, AppError>): AuthUseCase {
+  return { execute: async () => result };
+}
+
+/** Use case that throws the given error. */
+function recordingLogger(): Logger & { readonly logged: unknown[] } {
+  const logged: unknown[] = [];
+  return {
+    error: (error) => {
+      logged.push(error);
+    },
+    logged,
+  };
+}
+
+function throwing(error: Error): AuthUseCase {
+  return {
+    execute: async () => {
+      throw error;
+    },
+  };
+}
+
+const json = JSON.stringify({ name: 'alice', password: 'x' });
+const succeeding = returning(ok(session));
+
+describe('auth controller', () => {
+  test('sign-up answers 201 and sign-in 200 with {user, token}', async () => {
+    const controller = createAuthController({ signIn: succeeding, signUp: succeeding }, recordingLogger());
+
+    const signUp = await controller.signUp(post('/api/auth/sign-up', json));
+    const signIn = await controller.signIn(post('/api/auth/sign-in', json));
+
+    expect(signUp.status).toBe(201);
+    expect(await signUp.json()).toEqual(session);
+    expect(signIn.status).toBe(200);
+    expect(await signIn.json()).toEqual(session);
+  });
+
+  test('renders a Result error with field errors', async () => {
+    const errors = [{ field: 'name', message: 'Name is required' }];
+    const controller = createAuthController(
+      { signIn: returning(err(new ValidationError(errors))), signUp: succeeding },
+      recordingLogger(),
+    );
+
+    const response = await controller.signIn(post('/api/auth/sign-in', json, { 'x-correlation-id': 'abc' }));
+    const body: ErrorResponse = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get('x-correlation-id')).toBe('abc');
+    expect(body).toEqual({
+      correlationId: 'abc',
+      error: 'Bad Request',
+      errors,
+      message: 'Validation failed',
+      path: '/api/auth/sign-in',
+      statusCode: 400,
+      timestamp: expect.any(String),
+    });
+    expect(Number.isNaN(Date.parse(body.timestamp))).toBe(false);
+  });
+
+  test('renders a Result error without field errors and omits `errors`', async () => {
+    const controller = createAuthController(
+      { signIn: returning(err(new UnauthorizedError('Invalid credentials'))), signUp: succeeding },
+      recordingLogger(),
+    );
+
+    const response = await controller.signIn(post('/api/auth/sign-in', json));
+
+    expect(await response.json()).toEqual({
+      correlationId: expect.any(String),
+      error: 'Unauthorized',
+      message: 'Invalid credentials',
+      path: '/api/auth/sign-in',
+      statusCode: 401,
+      timestamp: expect.any(String),
+    });
+  });
+
+  test('renders a thrown AppError with its own status and does not log it', async () => {
+    const logger = recordingLogger();
+    const controller = createAuthController(
+      { signIn: succeeding, signUp: throwing(new ConflictError('User already exists')) },
+      logger,
+    );
+
+    const response = await controller.signUp(post('/api/auth/sign-up', json));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: 'Conflict', message: 'User already exists', statusCode: 409 });
+    expect(logger.logged).toHaveLength(0);
+  });
+
+  test('hides an unexpected thrown Error behind a 500 and logs it', async () => {
+    const failure = new Error('connection refused to 10.0.0.5');
+    const logger = recordingLogger();
+    const controller = createAuthController({ signIn: throwing(failure), signUp: succeeding }, logger);
+
+    const response = await controller.signIn(post('/api/auth/sign-in', json));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      error: 'Internal Server Error',
+      message: 'An unexpected error occurred',
+      statusCode: 500,
+    });
+    expect(logger.logged).toEqual([failure]);
+  });
+
+  test.each([
+    ['{not json', 'Request body must be valid JSON'],
+    ['[1, 2]', 'Request body must be a JSON object'],
+    ['null', 'Request body must be a JSON object'],
+  ])('rejects the body %p with a 400', async (raw, message) => {
+    const controller = createAuthController({ signIn: succeeding, signUp: succeeding }, recordingLogger());
+
+    const response = await controller.signUp(post('/api/auth/sign-up', raw));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'Bad Request', message, statusCode: 400 });
+  });
+
+  test('rejects a non-JSON media type with 415 before calling the use case', async () => {
+    let called = false;
+    const spy: AuthUseCase = {
+      execute: async () => {
+        called = true;
+        return ok(session);
+      },
+    };
+    const controller = createAuthController({ signIn: spy, signUp: spy }, recordingLogger());
+
+    const response = await controller.signIn(post('/api/auth/sign-in', json, { 'content-type': 'text/plain' }));
+
+    expect(response.status).toBe(415);
+    expect(await response.json()).toMatchObject({
+      error: 'Unsupported Media Type',
+      message: 'Content-Type must be application/json',
+      statusCode: 415,
+    });
+    expect(called).toBe(false);
+  });
+});

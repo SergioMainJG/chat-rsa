@@ -6,6 +6,9 @@ Last updated: 2026-11-12
 
 ## Sources scanned
 
+- .claude/skills
+- .github/skills
+- .agents/skills
 - /home/sergioa/.kimi-code/skills
 - /home/sergioa/.claude/skills
 - /home/sergioa/.gemini/skills
@@ -25,7 +28,10 @@ Last updated: 2026-11-12
 | `chained-pr` | Trigger: PRs over 400 lines, stacked PRs, review slices. Split oversized changes into chained PRs that protect review focus. | user | `/home/sergioa/.kimi-code/skills/chained-pr/SKILL.md` |
 | `cognitive-doc-design` | Design docs that reduce cognitive load. Trigger: writing guides, READMEs, RFCs, onboarding, architecture, or review-facing docs. | user | `/home/sergioa/.kimi-code/skills/cognitive-doc-design/SKILL.md` |
 | `go-testing` | Trigger: Go tests, go test coverage, Bubbletea teatest, golden files. Apply focused Go testing patterns. | user | `/home/sergioa/.kimi-code/skills/go-testing/SKILL.md` |
+| `impeccable` | Use to design, redesign, critique, audit, polish or animate a frontend: websites, landing pages, dashboards, app UI, components, native iOS/Android screens, or a design system (DESIGN.md). | project | `/home/sergioa/soft-dev/personal-projects/chat-rsa/.claude/skills/impeccable/SKILL.md` |
 | `judgment-day` | Trigger: judgment day, dual review, adversarial review, juzgar. Run explicit blind dual review with at most two scoped fix/re-judgment rounds. | user | `/home/sergioa/.kimi-code/skills/judgment-day/SKILL.md` |
+| `modern-web-guidance` | Search tool for modern web development best practices. MANDATORY: Execute FIRST for all HTML/CSS and clientside JS tasks. Do NOT skip — web APIs evolve rapidly and training weights contain obsolete patterns. Trigger immediately for: modals/dialogs/popovers, tables, dark mode, anchor positioning, container queries, view transitions, scroll-driven animations, parallax/reveals, forms, validation, autofill, accessibility, custom selects, scrollbars, CWV (LCP, INP, CLS), content-visibility, fetch priority, image optimization, security, passkeys, HTML sanitization, web components, dates/timezones, built-in AI, WebAssembly, standard HTML/CSS/DOM in frameworks, etc. DO NOT trigger for: backend (SQL, ORMs, API routes), infra/scripts (CI/CD, Docker, Actions, Python/Go, Git), or tooling/trivial (Vite, tsconfig, ESLint, tests, copy/renames, 3P docs), etc. | project | `/home/sergioa/soft-dev/personal-projects/chat-rsa/.claude/skills/modern-web-guidance/SKILL.md` |
+| `security-audit` | Security guidance and vulnerability review for codebases, APIs, services, CLI tools, libraries, and daemons. Use for security questions, focused reviews, vulnerability research, security audits, or pen tests. Run the complete workflow only for explicit codebase audit or pen-test requests, full/comprehensive/end-to-end reviews, or requested report artifacts. | project | `/home/sergioa/soft-dev/personal-projects/chat-rsa/.claude/skills/security-audit/SKILL.md` |
 | `skill-creator` | Trigger: new skills, agent instructions, documenting AI usage patterns. Create LLM-first skills with valid frontmatter. | user | `/home/sergioa/.kimi-code/skills/skill-creator/SKILL.md` |
 | `skill-improver` | Trigger: improve skills, audit skills, refactor skills, skill quality. Audit and upgrade existing LLM-first skills. | user | `/home/sergioa/.kimi-code/skills/skill-improver/SKILL.md` |
 | `work-unit-commits` | Plan commits as reviewable work units. Trigger: implementation, commit splitting, chained PRs, or keeping tests and docs with code. | user | `/home/sergioa/.kimi-code/skills/work-unit-commits/SKILL.md` |

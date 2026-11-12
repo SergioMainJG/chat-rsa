@@ -26,3 +26,8 @@ logs/
 *.swp
 .DS_Store
 Thumbs.db
+
+.agents/
+.claude/
+bugs/
+reports/

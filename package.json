@@ -2,32 +2,33 @@
   "name": "chat-rsa",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "license": "MIT",
-  "packageManager": "bun@1.4.4",
+  "type": "module",
   "scripts": {
-    "dev": "bun --hot src/backend/main.ts",
-    "start": "NODE_ENV=production bun src/backend/main.ts",
     "build": "bun build src/backend/main.ts --target bun --outdir dist",
-    "typecheck": "tsc --noEmit",
-    "test:unit": "bun test ./src --pass-with-no-tests",
-    "test:integration": "bun test ./test/integration --pass-with-no-tests",
-    "test:e2e": "bun test ./test/e2e",
-    "verify": "bun fmt --check && bun lint --max-warnings 0 && bun run typecheck && bun run test:unit",
-    "pod:infra": "bun scripts/pod.ts infra",
-    "pod:up": "bun scripts/pod.ts up",
+    "dev": "bun --hot src/backend/main.ts",
     "pod:down": "bun scripts/pod.ts down",
+    "pod:infra": "bun scripts/pod.ts infra",
+    "pod:logs": "bun scripts/pod.ts logs",
     "pod:status": "bun scripts/pod.ts status",
-    "pod:logs": "bun scripts/pod.ts logs"
+    "pod:up": "bun scripts/pod.ts up",
+    "start": "NODE_ENV=production bun src/backend/main.ts",
+    "test:e2e": "bun test ./test/e2e",
+    "test:integration": "bun test ./test/integration --pass-with-no-tests",
+    "test:load": "bun scripts/load.ts",
+    "test:load:probes": "bun test ./test/load --timeout 180000",
+    "test:unit": "bun test ./src --pass-with-no-tests",
+    "typecheck": "tsc --noEmit",
+    "verify": "bun fmt --check && bun lint --max-warnings 0 && bun run typecheck && bun run test:unit"
   },
   "dependencies": {
     "@zxcvbn-ts/core": "^4.2.0",
     "@zxcvbn-ts/language-common": "^4.1.3",
-    "argon2": "^0.45.2",
     "jose": "^6.2.17"
   },
   "devDependencies": {
     "@types/bun": "^1.4.4",
     "typescript": "7.1.0-beta"
-  }
+  },
+  "packageManager": "bun@1.4.4"
 }

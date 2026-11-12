@@ -5,15 +5,9 @@ exact = true
 coverageSkipTestFiles = true
 
 # ============================================================================
-# Bun Configuration (Canonical + Perfectionist Linter & Native Formatter)
-# Docs: https://bun.sh/docs/lint | https://bun.sh/docs/format
-# ============================================================================
-
-# ============================================================================
 # FORMATTER ([fmt]) - Estándar Canonical Prettier + Ordenamiento Nativo
 # ============================================================================
 [fmt]
-# Opciones base de Prettier adoptadas por Canonical
 printWidth = 100
 tabWidth = 2
 useTabs = false
@@ -27,14 +21,11 @@ bracketSameLine = false
 arrowParens = "always"
 endOfLine = "lf"
 
-# Superpoderes nativos en Rust de bun fmt
-# Nota: Desactivamos sortImports en [fmt] para que no colisione con las reglas granulares de Perfectionist en [lint]
 sortImports = false
 sortPackageJson = true
 sortTailwindcss = true
 jsdoc = true
 
-# Ignorar artefactos y archivos autogenerados al formatear
 ignorePatterns = [
   "dist/",
   "build/",
@@ -44,10 +35,15 @@ ignorePatterns = [
   "**/*.d.ts",
   "bun.lock",
   "package-lock.json",
-  "pnpm-lock.yaml"
+  "pnpm-lock.yaml",
+  # Managed by agent tooling (skill registry, vendored skills): regenerated on update, not project code.
+  ".atl/",
+  ".agents/",
+  ".claude/skills/",
+  ".github/skills/",
+  ".github/agents/",
 ]
 
-# Overrides de formato para archivos específicos
 [[fmt.overrides]]
 files = ["*.test.ts", "*.spec.ts", "*.e2e-spec.ts"]
 options = { printWidth = 120 }
@@ -60,37 +56,42 @@ options = { tabWidth = 2, singleQuote = false }
 # LINTER ([lint]) - Canonical + Perfectionist Architecture
 # ============================================================================
 [lint]
-# Activa el chequeo de tipos nativo de Bun (necesario para las reglas de canonical/typescript-type-checking)
 typeAware = true
 typeCheck = true
 
-# Plugins externos de ESLint (Perfectionist corre sobre el motor híbrido de Bun; unicorn, import y ts son nativos)
-plugins = ["eslint-plugin-perfectionist"]
+plugins = [
+  "eslint-plugin-perfectionist",
+  { name = "unicorn-js", specifier = "eslint-plugin-unicorn" },
+]
 
-# Ignorar directorios de artefactos, compilación y cobertura
 ignorePatterns = [
   "dist/",
   "build/",
   "coverage/",
   "node_modules/",
   "**/*.gen.ts",
-  "**/*.d.ts"
+  "**/*.d.ts",
+  # Managed by agent tooling (vendored skills and their scripts): not project code.
+  ".atl/",
+  ".agents/",
+  ".claude/skills/",
+  ".github/skills/",
+  ".github/agents/",
 ]
 
 # ============================================================================
-# Categorías Base (Nivel de exigencia: Máximo / Canonical)
+# Categorías Base (Solo errores reales y performance; estilo/restricción van explícitos abajo)
 # ============================================================================
 [lint.categories]
 correctness = "error"
 suspicious = "error"
-pedantic = "error"
 perf = "error"
-style = "error"
-restriction = "error"
+pedantic = "off"
+style = "off"
+restriction = "off"
 
 # ============================================================================
 # Configuración Global de Perfectionist
-# Docs: https://perfectionist.dev/guide/getting-started#settings
 # ============================================================================
 [lint.settings.perfectionist]
 type = "natural"
@@ -112,15 +113,12 @@ partitionByNewLine = false
 "perfectionist/sort-exports" = "error"
 "perfectionist/sort-heritage-clauses" = "error"
 "perfectionist/sort-import-attributes" = "error"
-"perfectionist/sort-imports" = [
-  "error",
-  {
-    type = "natural",
-    order = "asc",
-    newlinesBetween = "always",
-    internalPattern = ["^@/.*"]
-  }
-]
+"perfectionist/sort-imports" = ["error", {
+  type = "natural",
+  order = "asc",
+  newlinesBetween = 1,
+  internalPattern = ["^@/.*"],
+}]
 "perfectionist/sort-interfaces" = "error"
 "perfectionist/sort-intersection-types" = "error"
 "perfectionist/sort-jsx-props" = "error"
@@ -135,11 +133,17 @@ partitionByNewLine = false
 "perfectionist/sort-union-types" = "error"
 "perfectionist/sort-variable-declarations" = "error"
 
-# Desactivar reglas nativas de ordenamiento que colisionan con Perfectionist
+# Desactivar reglas que colisionan con Perfectionist, Bun o Exports nombrados
 "sort-imports" = "off"
 "sort-keys" = "off"
 "sort-vars" = "off"
 "import/order" = "off"
+"import/no-named-export" = "off"
+"import/prefer-default-export" = "off"
+"import/no-nodejs-modules" = "off"
+"import/extensions" = "off"
+"import/no-relative-parent-imports" = "off"
+"@typescript-eslint/prefer-readonly-parameter-types" = "off"
 
 # ============================================================================
 # Reglas de Canonical: Core ESLint (Cero ambigüedad y mutación controlada)
@@ -175,7 +179,7 @@ partitionByNewLine = false
 "no-extend-native" = "error"
 "no-extra-bind" = "error"
 "no-extra-label" = "error"
-"no-Floating-decimal" = "off" # deprecado en favor de bun fmt
+"no-floating-decimal" = "off"
 "no-implicit-coercion" = ["error", { boolean = true, number = true, string = true }]
 "no-implicit-globals" = "error"
 "no-implied-eval" = "error"
@@ -249,44 +253,35 @@ partitionByNewLine = false
 "@typescript-eslint/adjacent-overload-signatures" = "error"
 "@typescript-eslint/array-type" = ["error", { default = "array-simple" }]
 "@typescript-eslint/await-thenable" = "error"
-"@typescript-eslint/ban-ts-comment" = [
-  "error",
-  {
-    "ts-check" = false,
-    "ts-expect-error" = "allow-with-description",
-    "ts-ignore" = true,
-    "ts-nocheck" = true,
-    minimumDescriptionLength = 10
-  }
-]
+"@typescript-eslint/ban-ts-comment" = ["error", {
+  "ts-check" = false,
+  "ts-expect-error" = "allow-with-description",
+  "ts-ignore" = true,
+  "ts-nocheck" = true,
+  minimumDescriptionLength = 10,
+}]
 "@typescript-eslint/class-literal-property-style" = ["error", "fields"]
 "@typescript-eslint/consistent-generic-constructors" = ["error", "constructor"]
 "@typescript-eslint/consistent-indexed-object-style" = ["error", "record"]
-"@typescript-eslint/consistent-type-assertions" = [
-  "error",
-  {
-    assertionStyle = "as",
-    objectLiteralTypeAssertions = "never"
-  }
-]
+"@typescript-eslint/consistent-type-assertions" = ["error", {
+  assertionStyle = "as",
+  objectLiteralTypeAssertions = "never",
+}]
 "@typescript-eslint/consistent-type-definitions" = ["error", "type"]
-"@typescript-eslint/consistent-type-exports" = ["error", { fixMixedExportsWithInlineTypeSpecifier = true }]
-"@typescript-eslint/consistent-type-imports" = [
+"@typescript-eslint/consistent-type-exports" = [
   "error",
-  {
-    disallowTypeAnnotations = true,
-    fixStyle = "inline-type-imports",
-    prefer = "type-imports"
-  }
+  { fixMixedExportsWithInlineTypeSpecifier = true },
 ]
-"@typescript-eslint/explicit-function-return-type" = [
-  "error",
-  {
-    allowExpressions = true,
-    allowHigherOrderFunctions = true,
-    allowTypedFunctionExpressions = true
-  }
-]
+"@typescript-eslint/consistent-type-imports" = ["error", {
+  disallowTypeAnnotations = true,
+  fixStyle = "inline-type-imports",
+  prefer = "type-imports",
+}]
+"@typescript-eslint/explicit-function-return-type" = ["error", {
+  allowExpressions = true,
+  allowHigherOrderFunctions = true,
+  allowTypedFunctionExpressions = true,
+}]
 "@typescript-eslint/explicit-member-accessibility" = ["error", { accessibility = "no-public" }]
 "@typescript-eslint/explicit-module-boundary-types" = "error"
 "@typescript-eslint/method-signature-style" = ["error", "property"]
@@ -349,13 +344,16 @@ partitionByNewLine = false
 "@typescript-eslint/require-array-sort-compare" = ["error", { ignoreStringArrays = true }]
 "@typescript-eslint/require-await" = "error"
 "@typescript-eslint/restrict-plus-operands" = ["error", { skipCompoundAssignments = false }]
-"@typescript-eslint/restrict-template-expressions" = ["error", { allowNumber = true, allowBoolean = true }]
+"@typescript-eslint/restrict-template-expressions" = [
+  "error",
+  { allowNumber = true, allowBoolean = true },
+]
 "@typescript-eslint/return-await" = ["error", "in-try-catch"]
 "@typescript-eslint/switch-exhaustiveness-check" = "error"
 "@typescript-eslint/unified-signatures" = "error"
 
 # ============================================================================
-# Reglas de Canonical: Unicorn & Import (Nativas en Bun)
+# Reglas de Canonical: Unicorn & Import (Nativas en Bun + unicorn-js)
 # ============================================================================
 "import/first" = "error"
 "import/newline-after-import" = "error"
@@ -363,7 +361,7 @@ partitionByNewLine = false
 "import/no-cycle" = "error"
 "import/no-default-export" = "error"
 "import/no-duplicates" = ["error", { "prefer-inline" = true }]
-"import/no-Dynamic-require" = "off"
+"import/no-dynamic-require" = "off"
 "import/no-empty-named-blocks" = "error"
 "import/no-extraneous-dependencies" = "error"
 "import/no-mutable-exports" = "error"
@@ -373,7 +371,7 @@ partitionByNewLine = false
 "import/no-useless-path-segments" = "error"
 "import/no-webpack-loader-syntax" = "error"
 
-"unicorn/consistent-destructuring" = "error"
+"unicorn-js/consistent-destructuring" = "error"
 "unicorn/consistent-function-scoping" = "error"
 "unicorn/custom-error-definition" = "error"
 "unicorn/error-message" = "error"
@@ -385,11 +383,11 @@ partitionByNewLine = false
 "unicorn/no-array-callback-reference" = "error"
 "unicorn/no-array-for-each" = "error"
 "unicorn/no-array-method-this-argument" = "error"
-"unicorn/no-array-push-push" = "error"
+"unicorn/prefer-single-call" = "error"
 "unicorn/no-array-reduce" = "error"
 "unicorn/no-await-expression-member" = "error"
 "unicorn/no-console-spaces" = "error"
-"unicorn/no-for-loop" = "error"
+"unicorn-js/no-for-loop" = "error"
 "unicorn/no-hex-escape" = "error"
 "unicorn/no-instanceof-array" = "error"
 "unicorn/no-invalid-remove-event-listener" = "error"
@@ -398,17 +396,17 @@ partitionByNewLine = false
 "unicorn/no-nested-ternary" = "error"
 "unicorn/no-new-array" = "error"
 "unicorn/no-new-buffer" = "error"
-"unicorn/no-null" = "off" # En bases de datos/ORMs y APIs JSON null suele ser necesario
+"unicorn/no-null" = "off"
 "unicorn/no-object-as-default-parameter" = "error"
 "unicorn/no-process-exit" = "error"
-"unicorn/no-static-only-class" = "off" # Desactivado para permitir módulos/clases con decoradores en NestJS
+"unicorn/no-static-only-class" = "off"
 "unicorn/no-thenable" = "error"
 "unicorn/no-this-assignment" = "error"
 "unicorn/no-typeof-undefined" = "error"
 "unicorn/no-unnecessary-await" = "error"
 "unicorn/no-unreadable-array-destructuring" = "error"
 "unicorn/no-unreadable-iife" = "error"
-"unicorn/no-unused-properties" = "error"
+"unicorn-js/no-unused-properties" = "error"
 "unicorn/no-useless-fallback-in-spread" = "error"
 "unicorn/no-useless-length-check" = "error"
 "unicorn/no-useless-promise-resolve-reject" = "error"
@@ -450,7 +448,7 @@ partitionByNewLine = false
 "unicorn/prefer-string-starts-ends-with" = "error"
 "unicorn/prefer-string-trim-start-end" = "error"
 "unicorn/prefer-structured-clone" = "error"
-"unicorn/prefer-switch" = "error"
+"unicorn-js/prefer-switch" = "error"
 "unicorn/prefer-ternary" = "error"
 "unicorn/prefer-top-level-await" = "error"
 "unicorn/prefer-type-error" = "error"
@@ -464,17 +462,35 @@ partitionByNewLine = false
 # Overrides para Tests y Archivos de Configuración
 # ============================================================================
 [[lint.overrides]]
-files = ["**/*.test.ts", "**/*.spec.ts", "**/*.e2e-spec.ts", "test/**"]
+files = ["**/*.test.ts", "**/*.test-support.ts", "**/*.spec.ts", "**/*.e2e-spec.ts", "test/**"]
 rules = {
   "@typescript-eslint/no-explicit-any" = "off",
+  # Test doubles implement async ports synchronously: require-await, promise-function-async and
+  # unicorn/no-useless-promise-resolve-reject cannot all hold for them, and --fix cycles between them.
+  "@typescript-eslint/require-await" = "off",
   "@typescript-eslint/no-unsafe-assignment" = "off",
   "@typescript-eslint/no-unsafe-call" = "off",
   "@typescript-eslint/no-unsafe-member-access" = "off",
-  "no-console" = "off"
+  "no-console" = "off",
 }
 
 [[lint.overrides]]
 files = ["*.config.ts", "*.config.js", "*.config.mjs"]
 rules = {
-  "import/no-default-export" = "off"
+  "import/no-default-export" = "off",
+}
+
+# The composition root and the dev scripts are the only places allowed to write to the console;
+# everything else reports through the injected Logger port.
+[[lint.overrides]]
+files = ["src/backend/main.ts", "scripts/**"]
+rules = {
+  "no-console" = "off",
+}
+
+# k6 provides the `k6/*` modules at run time; only their types are installed (@types/k6, dev).
+[[lint.overrides]]
+files = ["test/load/auth.load.ts"]
+rules = {
+  "import/no-extraneous-dependencies" = "off",
 }
