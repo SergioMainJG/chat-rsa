@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "bun build src/backend/main.ts --target bun --outdir dist",
-    "dev": "bun --hot src/backend/main.ts",
+    "dev": "bun --hot src/backend/main.ts --hostname 0.0.0.0",
     "pod:down": "bun scripts/pod.ts down",
     "pod:infra": "bun scripts/pod.ts infra",
     "pod:logs": "bun scripts/pod.ts logs",
@@ -16,7 +16,7 @@
     "test:e2e": "bun test ./test/e2e",
     "test:integration": "bun test ./test/integration --pass-with-no-tests",
     "test:load": "bun scripts/load.ts",
-    "test:load:probes": "bun test ./test/load --timeout 180000",
+    "test:load:probes": "bun test ./test/load --timeout 180000 --reporter=junit --reporter-outfile=test-load-auth.xml",
     "test:unit": "bun test ./src --pass-with-no-tests",
     "typecheck": "tsc --noEmit",
     "verify": "bun fmt --check && bun lint --max-warnings 0 && bun run typecheck && bun run test:unit"

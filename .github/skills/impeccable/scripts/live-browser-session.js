@@ -4,6 +4,10 @@
  * Kept separate from live-browser.js so recovery state can be tested without booting the full
  * overlay UI. Served before live-browser.js and attached to window.**IMPECCABLE_LIVE_SESSION**.
  */
+// @ts-nocheck
+
+// 
+
 (function (root) {
   'use strict';
 

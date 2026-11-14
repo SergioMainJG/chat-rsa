@@ -9,12 +9,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The jobs only read the repository; nothing they run gets a token that can write.
+permissions:
+  contents: read
+
 jobs:
   quality:
     name: Format, lint, typecheck, unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Don't leave the token in .git/config for the code the job runs afterwards.
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           # bun lint / bun fmt are canary-only for now; move to "latest" once they ship in stable.
@@ -49,6 +56,9 @@ jobs:
       VALKEY_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Don't leave the token in .git/config for the code the job runs afterwards.
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: canary

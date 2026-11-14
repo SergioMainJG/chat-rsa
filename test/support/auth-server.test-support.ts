@@ -3,13 +3,17 @@ import type { SQL } from 'bun';
 import { loadConfig } from '../../src/backend/shared/config/env.config.ts';
 import { createPostgresClient } from '../../src/backend/shared/database/postgres.config.ts';
 import { createServer } from '../../src/backend/shared/http/app.server.ts';
+import { InMemoryRateLimiter } from '../../src/backend/shared/rate-limit/rate-limit.in-memory.ts';
 import { SignInUseCase } from '../../src/backend/user/application/user.sign-in.use-case.ts';
 import { SignUpUseCase } from '../../src/backend/user/application/user.sign-up.use-case.ts';
 import { PostgresUserDatasource } from '../../src/backend/user/infrastructure/user.datasource.postgresql.ts';
 import { UserRepositoryImpl } from '../../src/backend/user/infrastructure/user.repository.impl.ts';
 import { applyUserSchema } from '../../src/backend/user/infrastructure/user.schema.ts';
 import { Argon2PasswordHasher } from '../../src/backend/user/infrastructure/user.security.argon2.ts';
-import { JoseTokenIssuer } from '../../src/backend/user/infrastructure/user.security.jose.ts';
+import {
+  JoseTokenIssuer,
+  TOKEN_LIFETIME_SECONDS,
+} from '../../src/backend/user/infrastructure/user.security.jose.ts';
 import { createAuthController } from '../../src/backend/user/presentation/user.controller.ts';
 
 export const STRONG_PASSWORD = 'correct-Horse-battery-st4ple';
@@ -34,13 +38,18 @@ export async function startAuthServer(): Promise<AuthServer> {
   const users = new UserRepositoryImpl(new PostgresUserDatasource(sql));
   const hasher = new Argon2PasswordHasher();
   const tokens = new JoseTokenIssuer('e2e-secret');
+  // These suites sign in many times per name; the per-account throttle has its own tests.
+  const throttle = {
+    limiter: new InMemoryRateLimiter(),
+    policy: { capacity: 10_000, refillPerSecond: 10_000 },
+  };
   const logged: unknown[] = [];
   const created: string[] = [];
 
   const server = createServer({
     auth: createAuthController(
       {
-        signIn: new SignInUseCase(users, hasher, tokens),
+        signIn: new SignInUseCase(users, hasher, tokens, throttle),
         signUp: new SignUpUseCase(users, hasher, tokens),
       },
       {
@@ -48,6 +57,7 @@ export async function startAuthServer(): Promise<AuthServer> {
           logged.push(error);
         },
       },
+      TOKEN_LIFETIME_SECONDS,
     ),
     port: 0,
   });

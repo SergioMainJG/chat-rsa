@@ -1,70 +1,118 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-guard="pending">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Create account · chat-rsa</title>
+    <!-- CSP as a meta tag: Bun route handlers cannot return HTML imports, so it cannot be a header.
+         The hash is the route guard's inline style (the same on every guarded page), byte for
+         byte; change one, update the other (test/e2e/pages.csp.e2e.test.ts checks it). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'sha256-6gww4zzHl2TKVqiqTG1nIjYMh2+YyAKZjnuhGVHl30M='; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"
+    />
+    <title>Create account · Komwasai</title>
+    <!-- Route guard (auth.page-guard.ts): inline so it applies before the first paint in every
+         browser, without waiting for a stylesheet. The script removes data-guard to reveal. -->
+    <style>
+      html[data-guard='pending'] body {
+        visibility: hidden;
+      }
+      @media (scripting: none) {
+        html[data-guard='pending'] body {
+          visibility: visible;
+        }
+      }
+    </style>
+    <link rel="icon" href="../../../public/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="../../../public/favicon-32x32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="../../../public/favicon-16x16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="../../../public/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="../../../public/site.webmanifest" />
+    <meta name="theme-color" content="#150E60" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="./auth.css" />
+    <link rel="expect" href="#auth-panel" blocking="render" />
     <script type="module" src="./auth.form.ts"></script>
   </head>
   <body>
-    <main class="auth">
-      <h1>Create account</h1>
-      <form class="auth-form" action="/api/auth/sign-up" method="post" data-auth-form>
-        <fieldset>
-          <div class="field">
-            <label for="name">Name</label>
-            <input
-              id="name"
-              name="name"
-              type="text"
-              required
-              maxlength="64"
-              pattern="[\p{L}\p{N}]+"
-              autocomplete="username"
-              autocapitalize="none"
-              spellcheck="false"
-              aria-describedby="name-hint name-error"
-            />
-            <p class="field-hint" id="name-hint">
-              Letters and numbers only, no spaces. Up to 64 characters.
-            </p>
-            <p class="field-error" id="name-error" data-error-for="name"></p>
-          </div>
-          <div class="field">
-            <label for="password">Password</label>
-            <div class="password-control">
+    <header class="site-header">
+      <div class="shell site-header-inner">
+        <a class="brand" href="/">
+          <img class="brand-mark" src="../assets/isotipo-96.png" alt="" width="32" height="32" />
+          <span class="brand-name">Komwasai</span>
+        </a>
+        <nav class="header-nav" aria-label="Account">
+          <a class="link-quiet" href="/sign-in">Sign in</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="auth shell">
+      <section class="auth-panel" id="auth-panel">
+        <h1>Create account</h1>
+        <p class="auth-intro">Pick the name your contacts will find you by.</p>
+        <form class="auth-form" action="/api/auth/sign-up" method="post" data-auth-form>
+          <fieldset>
+            <div class="field">
+              <label for="name">Name</label>
               <input
-                id="password"
-                type="password"
-                name="password"
+                id="name"
+                name="name"
+                type="text"
                 required
-                maxlength="256"
-                autocomplete="new-password"
-                aria-describedby="password-hint password-error"
+                maxlength="64"
+                pattern="[\p{L}\p{N}]+"
+                autocomplete="username"
+                autocapitalize="none"
+                spellcheck="false"
+                aria-describedby="name-hint name-error"
               />
-              <button
-                type="button"
-                class="password-toggle"
-                aria-controls="password"
-                aria-pressed="false"
-                data-password-toggle
-              >
-                <span class="when-hidden">Show password</span>
-                <span class="when-shown">Hide password</span>
-              </button>
+              <p class="field-hint" id="name-hint">
+                Letters and numbers only, no spaces. Up to 64 characters.
+              </p>
+              <p class="field-error" id="name-error" data-error-for="name"></p>
             </div>
-            <p class="field-hint" id="password-hint">
-              Use a long, uncommon passphrase that does not include your name.
-            </p>
-            <p class="field-error" id="password-error" data-error-for="password"></p>
-          </div>
-          <p class="form-message" role="alert" data-form-message></p>
-          <button type="submit">Create account</button>
-        </fieldset>
-      </form>
-      <p class="switch">Already have an account? <a href="/sign-in">Sign in</a></p>
+            <div class="field">
+              <label for="password">Password</label>
+              <div class="password-control">
+                <input
+                  id="password"
+                  type="password"
+                  name="password"
+                  required
+                  maxlength="256"
+                  autocomplete="new-password"
+                  aria-describedby="password-hint password-error"
+                />
+                <button
+                  type="button"
+                  class="password-toggle"
+                  aria-controls="password"
+                  aria-pressed="false"
+                  data-password-toggle
+                >
+                  <span class="when-hidden">Show password</span>
+                  <span class="when-shown">Hide password</span>
+                </button>
+              </div>
+              <p class="field-hint" id="password-hint">
+                Use a long, uncommon passphrase that does not include your name.
+              </p>
+              <p class="field-error" id="password-error" data-error-for="password"></p>
+            </div>
+            <p class="form-message" role="alert" data-form-message></p>
+            <button class="button-primary" type="submit">Create account</button>
+          </fieldset>
+        </form>
+        <p class="switch">Already have an account? <a href="/sign-in">Sign in</a></p>
+      </section>
+      <aside class="auth-aside" aria-label="About your privacy">
+        <p class="auth-aside-lead">Your keys are made on this device.</p>
+        <p class="auth-aside-note">
+          The first time you open the chat, this browser creates your encryption keys. The private
+          key cannot be exported, so it never leaves this device.
+        </p>
+      </aside>
     </main>
   </body>
 </html>

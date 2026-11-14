@@ -8,6 +8,10 @@
  * generating (progressive dots), and cycling (prev/next + accept/discard). Feels like Spotlight,
  * not a modal.
  */
+// @ts-nocheck
+
+// 
+
 (function () {
   'use strict';
   if (typeof window === 'undefined') {

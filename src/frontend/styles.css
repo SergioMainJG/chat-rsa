@@ -1,11 +1,281 @@
+/* Shared base for every page (home, sign-in, sign-up, chat): design tokens, reset, browser
+   surfaces, the site header, buttons and the cross-document view transitions.
+   Spec: docs/design/home-page.md. Page stylesheets add only what is theirs. */
+
 :root {
-  color-scheme: light dark;
-  font-family: system-ui, sans-serif;
+  --color-field: #150e60;
+  --color-field-deep: #100a50;
+  --color-field-raised: #1e1678;
+  --color-field-line: #2c2390;
+  --color-ink: #fdfff4;
+  --color-ink-muted: #e1e0e9;
+  --color-ink-subtle: #b9b6d6;
+  --color-surface: #ffffff;
+  --color-surface-soft: #ece9fb;
+  --color-surface-line: #dddbea;
+  --color-on-surface: #000000;
+  --color-on-surface-muted: #4a4766;
+  --color-accent: #473dc6;
+  --color-ok: #58f46c;
+  --color-danger: #ff8a80;
+  --color-danger-on-surface: #b42318;
+  --color-warning: #ffd479;
+
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  --radius-control: 12px;
+  --radius-panel: 16px;
+  --radius-pill: 999px;
+  --header-height: 72px;
+  --target-min: 44px;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  color-scheme: dark;
+  accent-color: var(--color-ok);
+  scrollbar-color: var(--color-accent) var(--color-field-deep);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
   margin: 0;
-  display: grid;
-  min-height: 100vh;
-  place-items: center;
+  background: var(--color-field);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  caret-color: var(--color-ok);
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  flex: 1;
+}
+
+::selection {
+  background: var(--color-ok);
+  color: var(--color-field-deep);
+}
+
+h1,
+h2,
+h3,
+p,
+ul,
+ol,
+figure {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+}
+
+:where(a, button, input, textarea, select, summary):focus-visible {
+  outline: 3px solid var(--color-ok);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.shell {
+  width: min(1200px, 100% - 2 * var(--space-5));
+  margin-inline: auto;
+}
+
+/* Site header: the brand (which morphs between pages) and the account links. */
+
+.site-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--header-height);
+  gap: var(--space-4);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+}
+
+.site-header .brand {
+  view-transition-name: brand;
+}
+
+.brand-mark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.brand-name {
+  font-size: 1.375rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.header-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.link-quiet {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-control);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.link-quiet:hover {
+  text-decoration: underline;
+}
+
+/* Buttons: one white primary per screen, pills for secondary account actions. */
+
+.button-pill,
+.button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--ease-out-expo),
+    color 160ms var(--ease-out-expo);
+}
+
+.button-pill {
+  min-height: var(--target-min);
+  padding-inline: var(--space-5);
+  color: var(--color-accent);
+}
+
+.button-primary {
+  min-height: 56px;
+  padding-inline: var(--space-6);
+  color: var(--color-on-surface);
+  font-size: 1.125rem;
+}
+
+.button-pill:hover,
+.button-primary:hover {
+  background: var(--color-ok);
+  color: var(--color-field-deep);
+}
+
+.button-pill:focus-visible,
+.button-primary:focus-visible {
+  border-radius: var(--radius-pill);
+}
+
+@media (width < 600px) {
+  .shell {
+    width: calc(100% - 2 * var(--space-4));
+  }
+
+  .brand-name {
+    font-size: 1.25rem;
+  }
+
+  .link-quiet {
+    padding-inline: var(--space-3);
+  }
+
+  .button-pill {
+    padding-inline: var(--space-4);
+  }
+}
+
+@media (width < 380px) {
+  .site-header .brand-name {
+    display: none;
+  }
+}
+
+/* Cross-document view transitions: every page opts in, so navigating between them cross-fades
+   the page while the brand stays put. Off for reduced motion. */
+
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root) {
+  animation: 180ms ease-in both page-out;
+}
+
+::view-transition-new(root) {
+  animation: 320ms var(--ease-out-expo) both page-in;
+}
+
+::view-transition-group(brand) {
+  animation-duration: 320ms;
+  animation-timing-function: var(--ease-out-expo);
+}
+
+@keyframes page-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  @view-transition {
+    navigation: none;
+  }
 }

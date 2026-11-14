@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import type { ErrorResponse } from '../../src/shared/contracts/error.contract.ts';
 
+import { MAX_JSON_BODY_BYTES } from '../../src/backend/shared/http/http.json-body.ts';
 import { MAX_NAME_LENGTH, MAX_PASSWORD_LENGTH } from '../../src/backend/user/domain/user.value-objects.ts';
 import { type AuthServer, startAuthServer, STRONG_PASSWORD } from '../support/auth-server.test-support.ts';
 
@@ -89,17 +90,19 @@ describe('POST /api/auth/sign-up at the length boundaries', () => {
   });
 });
 
+// bugs/security.bug.xml, lead 3: the auth routes now cap their body at 64 KiB like every other
+// JSON route, so the reported ~1 MB payload is refused before the per-field limits are checked.
 describe.each(['/api/auth/sign-up', '/api/auth/sign-in'])(
   'POST %s with the reported 500,000-character payload',
   (path) => {
-    test('rejects both oversized fields with 400 and stores nothing', async () => {
+    test('is refused with 413 for its size and stores nothing', async () => {
       const name = 'a'.repeat(ATTACK_LENGTH);
 
       const response = await app.post(path, { name, password: 'B'.repeat(ATTACK_LENGTH) });
       const payload: ErrorResponse = await response.json();
 
-      expect(response.status).toBe(400);
-      expect(payload.errors).toEqual([NAME_TOO_LONG, PASSWORD_TOO_LONG]);
+      expect(response.status).toBe(413);
+      expect(payload.message).toBe(`Request body must be at most ${MAX_JSON_BODY_BYTES} bytes`);
       expect(await rows(name)).toBe(0);
     });
   },

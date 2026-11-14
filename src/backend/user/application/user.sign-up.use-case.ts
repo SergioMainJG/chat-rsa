@@ -1,7 +1,7 @@
-import type { AuthResponse } from '../../../shared/contracts/auth.contract.ts';
 import type { NewUser, User } from '../domain/user.entity.ts';
 import type { UserRepository } from '../domain/user.repository.ts';
 import type { PasswordHasher, TokenIssuer } from '../domain/user.security.ts';
+import type { AuthSession } from './user.session.ts';
 
 import { type AppError, ConflictError } from '../../shared/domain/app.error.ts';
 import { err, ok, type Result } from '../../shared/domain/result.ts';
@@ -14,7 +14,7 @@ export class SignUpUseCase {
     private readonly tokens: TokenIssuer,
   ) {}
 
-  async execute(input: CredentialsInput): Promise<Result<AuthResponse, AppError>> {
+  async execute(input: CredentialsInput): Promise<Result<AuthSession, AppError>> {
     const credentials = parseSignUpCredentials(input);
     if (!credentials.ok) {
       return credentials;
@@ -30,7 +30,7 @@ export class SignUpUseCase {
     if (!created.ok) {
       return created;
     }
-    return ok({ token: await this.tokens.issue(created.value), user: created.value.toPublic() });
+    return ok({ ...(await this.tokens.issue(created.value)), user: created.value.toPublic() });
   }
 
   /**

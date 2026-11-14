@@ -13,10 +13,17 @@ describe('runUserPattern', () => {
     },
   );
 
-  test('matches exactly the pool and sign-up names of its own run', () => {
+  test('matches exactly the pool, sign-up and messaging names of its own run', () => {
     const pattern = new RegExp(runUserPattern('mwdo1ixq'), 'u');
 
-    for (const name of ['loadmwdo1ixqp0', 'loadmwdo1ixqp19', 'loadmwdo1ixqu0', 'loadmwdo1ixqu1234']) {
+    for (const name of [
+      'loadmwdo1ixqp0',
+      'loadmwdo1ixqp19',
+      'loadmwdo1ixqu0',
+      'loadmwdo1ixqu1234',
+      'loadmwdo1ixqm0',
+      'loadmwdo1ixqm42',
+    ]) {
       expect(pattern.test(name)).toBe(true);
     }
   });
@@ -27,6 +34,7 @@ describe('runUserPattern', () => {
     'load',
     'loadmwdo1ixq',
     'loadmwdo1ixqx1',
+    'loadmwdo1ixqm',
     'loadmwdo1ixqp',
     'xloadmwdo1ixqp1',
     'loadmwdo1ixqp1x',

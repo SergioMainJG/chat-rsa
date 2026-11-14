@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<security_audit repo="chat-rsa" run_id="chat-rsa-run-2" branch="feat/messages" commit="7a4ba20be4e5351c2e8679d2f7c0f08803a3ff5b">
+  <summary>
+    <coverage total_units="37" covered="32" candidate="4" blocked="0" deferred="0" not_applicable="1" />
+    <findings confirmed="1" needs_validation="3" rejected="0" />
+  </summary>
+
+  <confirmed_findings>
+    <finding id="1" severity="medium" confidence="high">
+      <fingerprint>src/frontend/messaging/application/chat.controller.ts:ChatController.receive:cross-sender-idempotency-key-collision</fingerprint>
+      <title>Cross-Sender idempotencyKey Collision in ChatController Overwrites Messages and Spoofs E2EE Sender Attribution</title>
+      <description>
+        The backend and PostgreSQL restrict idempotency_key uniqueness solely per sender:
+        CONSTRAINT messages_idempotency_uq UNIQUE (sender_id, idempotency_key) in sql/index.sql:68.
+        However, ChatController.#entries in the browser indexes all room messages solely by
+        message.idempotencyKey (without senderId). Furthermore, when #decrypt(message) returns null,
+        ChatController.#receive reuses any plaintext previously stored under that same key:
+        entries.set(key, toEntry(message, text ?? entries.get(key)?.text ?? null)).
+        Because any room member observes idempotencyKey values in message.new frames or REST history,
+        a malicious room member (Bob) can reuse another member's (Alice's) idempotencyKey to:
+        (1) overwrite Alice's message in other members' chat views, and
+        (2) spoof E2EE sender attribution when an undecryptable message from Alice (e.g. from an earlier
+        keyEpoch) is re-evaluated on sender-keys.available and inherits Bob's decrypted plaintext.
+      </description>
+      <root_cause>
+        ChatController.#entries (src/frontend/messaging/application/chat.controller.ts:135) uses only
+        message.idempotencyKey as the Map key, and ChatController.#receive (line 843) falls back to
+        entries.get(key)?.text without verifying that the existing entry belongs to the same senderId or message.id.
+      </root_cause>
+      <trace>
+        <step kind="entrypoint" file="src/frontend/messaging/application/chat.controller.ts" line="670" scope="ChatController.#onFrame">
+          Receives message.new and sender-keys.available WebSocket frames with MessageView payloads exposing idempotencyKey.
+        </step>
+        <step kind="propagation" file="src/frontend/messaging/application/chat.controller.ts" line="727" scope="ChatController.#onNewMessage">
+          Forwards incoming MessageView records to this.#receive(message).
+        </step>
+        <step kind="propagation" file="src/frontend/messaging/application/chat.controller.ts" line="805" scope="ChatController.#onSenderKeys">
+          On sender-keys.available, re-invokes #receive(message) for undecrypted messages in #undecrypted matching (roomId, keyEpoch).
+        </step>
+        <step kind="sink" file="src/frontend/messaging/application/chat.controller.ts" line="843" scope="ChatController.#receive">
+          Executes entries.set(key, toEntry(message, text ?? entries.get(key)?.text ?? null)) using key = message.idempotencyKey.
+        </step>
+      </trace>
+      <reproduction>
+        <command>/home/sergioa/security-audit-skill/chat-rsa/run-2/tools/sandbox-run.sh verify-idemp check-16 -- /opt/bun /harness/repro.ts</command>
+        <observed_result>
+          1. Alice's epoch-1 message initially renders as "Unable to decrypt" (undecryptable: true).
+          2. Bob sends an epoch-2 message with the same idempotencyKey and plaintext "FORGED BY BOB: Wire funds to account 999".
+          3. On sender-keys.available, #receive(aliceMessage) fails decryption (null), reads entries.get(key)?.text,
+             and renders "FORGED BY BOB: Wire funds to account 999" under sender: "User 1" (Alice) with undecryptable: false.
+        </observed_result>
+      </reproduction>
+      <remediation>
+        Key #entries by `${message.senderId}:${message.idempotencyKey}` (or message.id) and only preserve
+        existing.text when existing.senderId === message.senderId and (existing.id === null || existing.id === message.id).
+      </remediation>
+    </finding>
+  </confirmed_findings>
+
+  <needs_validation_leads>
+    <lead id="1">
+      <fingerprint>github/workflows/ci.yml:unscoped-github-token-on-pull-request</fingerprint>
+      <title>CI workflow executes pull_request code without narrowing GITHUB_TOKEN permissions</title>
+      <description>
+        .github/workflows/ci.yml triggers on push (main) and pull_request, checks out PR code via
+        actions/checkout@v4 (default persist-credentials: true), and executes repository code
+        (bun fmt, bun lint, typecheck, tests) without declaring a read-only permissions: block.
+      </description>
+      <claimed_root_cause>
+        Missing permissions: { contents: read } and persist-credentials: false in .github/workflows/ci.yml.
+      </claimed_root_cause>
+      <trace>
+        <step kind="entrypoint" file=".github/workflows/ci.yml" line="6" scope="on.pull_request" />
+        <step kind="propagation" file=".github/workflows/ci.yml" line="17" scope="jobs.quality.steps[0]" />
+        <step kind="sink" file=".github/workflows/ci.yml" line="26" scope="jobs.quality.steps[6]" />
+      </trace>
+      <blockers>
+        <blocker>GitHub Actions default Workflow permissions setting (read-only vs read-write) is not visible in source.</blocker>
+        <blocker>Branch protection rules on main are not visible in source.</blocker>
+      </blockers>
+      <validation_plan>
+        Check GitHub Settings -> Actions -> General -> Workflow permissions for GITHUB_TOKEN default scope;
+        add top-level permissions: { contents: read } and persist-credentials: false on actions/checkout@v4.
+      </validation_plan>
+    </lead>
+
+    <lead id="2">
+      <fingerprint>scripts/pod.ts:unauthenticated-valkey-and-db-ports-published-on-all-interfaces</fingerprint>
+      <title>Podman pod publishes unauthenticated Valkey and default-credential PostgreSQL ports without loopback host binding</title>
+      <description>
+        scripts/pod.ts publishes ports 3001:3000, 5433:5432, and 6380:6379 without a 127.0.0.1: prefix,
+        binding 0.0.0.0 by default. Valkey runs without requirepass (and protected-mode no in the image)
+        and Postgres runs with static chat:chat credentials. On an untrusted network without a host firewall,
+        peers could flush revoked-session:&lt;sid&gt; or rl:* keys in Valkey or access Postgres.
+      </description>
+      <claimed_root_cause>
+        scripts/pod.ts:44 omits 127.0.0.1: in -p and starts Valkey without auth and Postgres with chat:chat.
+      </claimed_root_cause>
+      <trace>
+        <step kind="entrypoint" file="scripts/pod.ts" line="15" scope="HOST_PORTS" />
+        <step kind="propagation" file="scripts/pod.ts" line="44" scope="startInfra" />
+        <step kind="sink" file="scripts/pod.ts" line="51" scope="startInfra" />
+      </trace>
+      <blockers>
+        <blocker>Actual host network exposure and firewall rules (nftables/ufw) when running the pod.</blocker>
+      </blockers>
+      <validation_plan>
+        Run `ss -tlnp '( sport = :5433 or sport = :6380 )'` and inspect host firewall while pod is running;
+        prefix `-p 127.0.0.1:` in scripts/pod.ts:44 for Postgres and Valkey.
+      </validation_plan>
+    </lead>
+
+    <lead id="3">
+      <fingerprint>user.controller/readCredentials/uncapped-request-json</fingerprint>
+      <title>Auth endpoints parse JSON bodies via uncapped request.json() instead of readCappedText</title>
+      <description>
+        POST /api/auth/sign-in and POST /api/auth/sign-up use request.json() in readCredentials instead of
+        readCappedText(request, MAX_JSON_BODY_BYTES) (64 KiB) used by readJsonObject in messaging,
+        and createServer omits maxRequestBodySize on Bun.serve (default 128 MiB).
+      </description>
+      <claimed_root_cause>
+        src/backend/user/presentation/user.controller.ts:79 calls request.json() without a byte-length cap.
+      </claimed_root_cause>
+      <trace>
+        <step kind="entrypoint" file="src/backend/shared/http/app.server.ts" line="67" scope="createServer" />
+        <step kind="propagation" file="src/backend/user/presentation/user.controller.ts" line="75" scope="readCredentials" />
+        <step kind="sink" file="src/backend/user/presentation/user.controller.ts" line="79" scope="readCredentials" />
+      </trace>
+      <blockers>
+        <blocker>Deployed ingress/proxy body size limits (Cloudflare/nginx) outside the repository.</blocker>
+      </blockers>
+      <validation_plan>
+        Send a &gt;64 KiB POST to /api/auth/sign-in against createServer locally and check production ingress limits.
+      </validation_plan>
+    </lead>
+  </needs_validation_leads>
+</security_audit>

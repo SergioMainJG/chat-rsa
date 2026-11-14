@@ -5,6 +5,7 @@ import { loadConfig } from '../../src/backend/shared/config/env.config.ts';
 import { createPostgresClient } from '../../src/backend/shared/database/postgres.config.ts';
 import { ConflictError } from '../../src/backend/shared/domain/app.error.ts';
 import { createServer } from '../../src/backend/shared/http/app.server.ts';
+import { InMemoryRateLimiter } from '../../src/backend/shared/rate-limit/rate-limit.in-memory.ts';
 import { SignInUseCase } from '../../src/backend/user/application/user.sign-in.use-case.ts';
 import { SignUpUseCase } from '../../src/backend/user/application/user.sign-up.use-case.ts';
 import { PasswordHash, UserName } from '../../src/backend/user/domain/user.value-objects.ts';
@@ -104,8 +105,15 @@ describe('POST /api/auth/sign-up when the database fails', () => {
     const tokens = new JoseTokenIssuer('fault-secret');
     const server = createServer({
       auth: createAuthController(
-        { signIn: new SignInUseCase(users, hasher, tokens), signUp: new SignUpUseCase(users, hasher, tokens) },
+        {
+          signIn: new SignInUseCase(users, hasher, tokens, {
+            limiter: new InMemoryRateLimiter(),
+            policy: { capacity: 10, refillPerSecond: 1 },
+          }),
+          signUp: new SignUpUseCase(users, hasher, tokens),
+        },
         { error: (error) => logged.push(error) },
+        3600,
       ),
       port: 0,
     });

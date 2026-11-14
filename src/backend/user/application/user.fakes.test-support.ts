@@ -1,7 +1,12 @@
 import { ConflictError } from '../../shared/domain/app.error.ts';
 import { UserDatasource } from '../domain/user.datasource.ts';
 import { type NewUser, User } from '../domain/user.entity.ts';
-import { PasswordHasher, TokenIssuer } from '../domain/user.security.ts';
+import {
+  type IssuedToken,
+  PasswordHasher,
+  SessionRevocations,
+  TokenIssuer,
+} from '../domain/user.security.ts';
 import {
   type Password,
   PasswordHash,
@@ -48,9 +53,31 @@ export class FakePasswordHasher extends PasswordHasher {
   }
 }
 
+export const FAKE_EXPIRES_AT = new Date('2030-01-01T00:00:00.000Z');
+
 export class FakeTokenIssuer extends TokenIssuer {
-  override async issue(user: User): Promise<string> {
-    return `token-for-${user.id}`;
+  override async issue(user: User): Promise<IssuedToken> {
+    return { expiresAt: FAKE_EXPIRES_AT, token: `token-for-${user.id}` };
+  }
+}
+
+/** Revoked session ids in memory; `failing` makes every call throw, as an unreachable Valkey would. */
+export class InMemorySessionRevocations extends SessionRevocations {
+  failing = false;
+  readonly revoked = new Set<string>();
+
+  override async isRevoked(sessionId: string): Promise<boolean> {
+    if (this.failing) {
+      throw new Error('revocations unavailable');
+    }
+    return this.revoked.has(sessionId);
+  }
+
+  override async revoke(sessionId: string): Promise<void> {
+    if (this.failing) {
+      throw new Error('revocations unavailable');
+    }
+    this.revoked.add(sessionId);
   }
 }
 

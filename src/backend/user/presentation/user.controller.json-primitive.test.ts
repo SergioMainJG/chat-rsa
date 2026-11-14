@@ -18,7 +18,7 @@ function spyUseCase(): AuthUseCase & { readonly calls: unknown[] } {
     calls,
     execute: async (input) => {
       calls.push(input);
-      return ok({ token: 'jwt', user: { id: 1, name: 'alice' } });
+      return ok({ expiresAt: new Date(1_800_000_000_000), token: 'jwt', user: { id: 1, name: 'alice' } });
     },
   };
 }
@@ -35,6 +35,7 @@ describe.each(['/api/auth/sign-up', '/api/auth/sign-in'] as const)('POST %s with
           logged.push(error);
         },
       },
+      3600,
     );
     const request = new Request(`http://localhost${path}`, {
       body: raw,
