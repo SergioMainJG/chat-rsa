@@ -3,7 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Chat · chat-rsa</title>
+    <!-- CSP as a meta tag: Bun route handlers cannot return HTML imports, so it cannot be a header.
+         The hash is the route guard's inline style (the same on every guarded page), byte for
+         byte; change one, update the other (test/e2e/pages.csp.e2e.test.ts checks it). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'sha256-6gww4zzHl2TKVqiqTG1nIjYMh2+YyAKZjnuhGVHl30M='; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"
+    />
+    <title>Chat · Komwasai</title>
     <!-- Route guard (auth.page-guard.ts): inline so it applies before the first paint in every
          browser, without waiting for a stylesheet. The script removes data-guard to reveal. -->
     <style>
@@ -16,21 +23,46 @@
         }
       }
     </style>
+    <link rel="icon" href="../../../public/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="../../../public/favicon-32x32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="../../../public/favicon-16x16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="../../../public/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="../../../public/site.webmanifest" />
+    <meta name="theme-color" content="#150E60" />
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="./chat.css" />
+    <link rel="expect" href="#rooms-title" blocking="render" />
     <script type="module" src="./chat.page.ts"></script>
   </head>
   <body class="chat-body">
     <div class="chat">
-      <header class="chat-header">
-        <h1><a href="/">chat-rsa</a></h1>
+      <header class="site-header chat-header">
+        <a class="brand" href="/">
+          <img class="brand-mark" src="../assets/isotipo-96.png" alt="" width="32" height="32" />
+          <span class="brand-name">Komwasai</span>
+        </a>
+        <h1 class="visually-hidden">Chat</h1>
         <p class="banner" role="status" data-connection-banner data-state="connecting"></p>
-        <a class="banner-action" href="/sign-in" data-sign-in-link hidden>Sign in</a>
-        <button type="button" class="sign-out" data-sign-out>Sign out</button>
+        <div class="header-nav">
+          <a class="button-pill banner-action" href="/sign-in" data-sign-in-link hidden>Sign in</a>
+          <button type="button" class="sign-out" data-sign-out>Sign out</button>
+        </div>
       </header>
 
+      <!-- Narrow screens show the rooms list or the open room, never both. This checkbox (drawn by
+           its labels, no script) switches to the list while a room is open. -->
+      <input
+        type="checkbox"
+        class="rooms-toggle visually-hidden"
+        id="rooms-toggle"
+        aria-label="Show the rooms list"
+      />
+
       <aside class="sidebar" aria-label="Rooms">
-        <h2>Rooms</h2>
+        <div class="sidebar-head">
+          <h2 id="rooms-title">Rooms</h2>
+          <label class="rooms-toggle-label rooms-back" for="rooms-toggle">Back to the room</label>
+        </div>
         <ul class="rooms" data-rooms></ul>
         <p class="hint rooms-empty">No rooms yet. Create one below.</p>
 
@@ -67,7 +99,7 @@
                 </p>
               </div>
               <p class="form-message" role="alert" data-form-message></p>
-              <button type="submit">Create room</button>
+              <button type="submit" class="button-pill">Create room</button>
             </fieldset>
           </form>
         </details>
@@ -95,31 +127,41 @@
 
       <main class="room" data-room-panel hidden>
         <header class="room-header">
-          <h2 data-room-name></h2>
+          <label class="rooms-toggle-label rooms-open" for="rooms-toggle">Rooms</label>
+          <div class="room-title">
+            <h2 data-room-name></h2>
+            <p class="tag">End-to-end encrypted</p>
+          </div>
           <ul class="members" data-members aria-label="Members"></ul>
-          <details class="panel room-actions">
+          <div class="key-warnings" role="alert" data-key-warnings hidden>
+            <ul data-key-warning-list></ul>
+            <button type="button" data-trust-keys>Trust new key</button>
+          </div>
+          <details class="room-actions">
             <summary>Manage room</summary>
-            <form class="stack" data-add-member-form>
-              <fieldset>
-                <div class="field">
-                  <label for="member-name">Add member</label>
-                  <input
-                    id="member-name"
-                    name="name"
-                    type="text"
-                    required
-                    maxlength="64"
-                    pattern="[\p{L}\p{N}]+"
-                    autocomplete="off"
-                    autocapitalize="none"
-                    spellcheck="false"
-                  />
-                </div>
-                <p class="form-message" role="alert" data-form-message></p>
-                <button type="submit">Add</button>
-              </fieldset>
-            </form>
-            <button type="button" class="danger" data-leave-room>Leave room</button>
+            <div class="room-actions-panel">
+              <form class="stack" data-add-member-form>
+                <fieldset>
+                  <div class="field">
+                    <label for="member-name">Add member</label>
+                    <input
+                      id="member-name"
+                      name="name"
+                      type="text"
+                      required
+                      maxlength="64"
+                      pattern="[\p{L}\p{N}]+"
+                      autocomplete="off"
+                      autocapitalize="none"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <p class="form-message" role="alert" data-form-message></p>
+                  <button type="submit" class="button-pill">Add</button>
+                </fieldset>
+              </form>
+              <button type="button" class="danger" data-leave-room>Leave room</button>
+            </div>
           </details>
         </header>
 
@@ -142,7 +184,7 @@
             placeholder="Write a message. Enter sends, Shift+Enter adds a line."
             autocomplete="off"
           ></textarea>
-          <button type="submit">Send</button>
+          <button type="submit" class="button-primary composer-send">Send</button>
         </form>
       </main>
 

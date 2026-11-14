@@ -22,7 +22,7 @@ export function arrayOf<T>(guard: Guard<T>): Guard<T[]> {
 }
 
 export function isAuthResponse(value: unknown): value is AuthResponse {
-  return isRecord(value) && isNonEmptyString(value.token) && isPublicUser(value.user);
+  return isRecord(value) && isPublicUser(value.user);
 }
 
 export function isHistoryPage(value: unknown): value is HistoryPage {

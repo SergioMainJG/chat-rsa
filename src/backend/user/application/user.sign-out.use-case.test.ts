@@ -34,11 +34,18 @@ async function setup(): Promise<{
   return { closed, datasource, revocations, signOut, user, verifier };
 }
 
+async function tokenOf(user: User, sessionId: string): Promise<string> {
+  const { token } = await issuer.issue(user, { id: sessionId, startedAt: new Date() });
+  return token;
+}
+
 describe('SignOutUseCase', () => {
   test('revokes the whole session: the token, tokens refreshed from it, and its refresh', async () => {
     const { closed, datasource, signOut, user, verifier } = await setup();
-    const token = await issuer.issue(user, 'session-a');
-    const refreshUseCase = new RefreshUseCase(verifier, new UserRepositoryImpl(datasource), issuer);
+    const token = await tokenOf(user, 'session-a');
+    const refreshUseCase = new RefreshUseCase(verifier, new UserRepositoryImpl(datasource), issuer, {
+      sessionMaxAgeSeconds: 604_800,
+    });
     const refreshed = await refreshUseCase.execute(token);
     if (!refreshed.ok) {
       throw refreshed.error;
@@ -55,16 +62,16 @@ describe('SignOutUseCase', () => {
 
   test('leaves the other sessions of the same user signed in', async () => {
     const { signOut, user, verifier } = await setup();
-    const phone = await issuer.issue(user, 'phone');
+    const phone = await tokenOf(user, 'phone');
 
-    await signOut.execute(await issuer.issue(user, 'laptop'));
+    await signOut.execute(await tokenOf(user, 'laptop'));
 
     expect(await verifier.verify(phone)).toMatchObject({ sessionId: 'phone', userId: UserId.restore(1) });
   });
 
   test('refuses an invalid or already signed-out token with 401 and revokes nothing', async () => {
     const { closed, revocations, signOut, user } = await setup();
-    const token = await issuer.issue(user, 'session-b');
+    const token = await tokenOf(user, 'session-b');
     await signOut.execute(token);
 
     for (const bad of ['not.a.jwt', token]) {
@@ -80,7 +87,7 @@ describe('SignOutUseCase', () => {
 describe('RevocationAwareTokenVerifier', () => {
   test('refuses every token when the revocation list cannot be read (fails closed)', async () => {
     const { revocations, user, verifier } = await setup();
-    const token = await issuer.issue(user, 'session-c');
+    const token = await tokenOf(user, 'session-c');
     revocations.failing = true;
 
     expect(await verifier.verify(token)).toBeNull();
@@ -88,7 +95,7 @@ describe('RevocationAwareTokenVerifier', () => {
 
   test('passes the claims of a token whose session was not revoked', async () => {
     const { user, verifier } = await setup();
-    const token = await issuer.issue(new User(user.id, user.name, user.passwordHash), 'session-d');
+    const token = await tokenOf(new User(user.id, user.name, user.passwordHash), 'session-d');
 
     expect(await verifier.verify(token)).toMatchObject({ name: 'alice', sessionId: 'session-d' });
   });

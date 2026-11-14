@@ -27,6 +27,8 @@ function fakeCrypto(): {
     members: readonly unknown[];
     roomId: string;
   }) => Promise<SenderKeyEnvelopeUpload[]>;
+  trustIdentityKeys: () => Promise<void>;
+  verifyIdentityKeys: () => Promise<number[]>;
 } {
   const prepared = new Set<string>();
   const calls: unknown[] = [];
@@ -41,6 +43,11 @@ function fakeCrypto(): {
       prepared.add(key);
       return [envelope(1, input.keyEpoch), envelope(2, input.keyEpoch)];
     },
+    // Pinning has its own tests (chat.epochs.key-pinning.test.ts): every key passes here.
+    trustIdentityKeys: async () => {
+      // Nothing is pinned by this double.
+    },
+    verifyIdentityKeys: async () => [],
   };
 }
 

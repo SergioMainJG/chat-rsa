@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import type { AuthResponse } from '../../src/shared/contracts/auth.contract.ts';
 
 import { type AuthServer, startAuthServer, STRONG_PASSWORD } from '../support/auth-server.test-support.ts';
+import { sessionTokenOf } from '../support/session-cookie.test-support.ts';
 
 // Users stored before the move to Bun.password have hashes from the `argon2` npm package. They
 // must still sign in over HTTP, or the migration locks every existing account out.
@@ -29,7 +30,7 @@ test('a user whose password was hashed by the argon2 package signs in with 200',
 
   expect(response.status).toBe(200);
   expect(body.user.name).toBe(name);
-  expect(body.token.split('.')).toHaveLength(3);
+  expect(sessionTokenOf(response).split('.')).toHaveLength(3);
 });
 
 test('the same legacy user is rejected with 401 for a wrong password', async () => {

@@ -21,8 +21,8 @@ import {
 } from './chat.api.guards.ts';
 
 /**
- * What a REST call means for the page. `unauthorized` (a 401, or no token at all) has already been
- * reported through `onUnauthorized`, which sends the user to /sign-in.
+ * What a REST call means for the page. `unauthorized` (a 401) has already been reported through
+ * `onUnauthorized`, which sends the user to /sign-in.
  */
 export type ApiOutcome<T> =
   | { readonly kind: 'failure'; readonly message: string; readonly status: number }
@@ -33,8 +33,7 @@ export type ApiOutcome<T> =
 
 export type ChatApiDeps = {
   readonly fetch: FetchLike;
-  readonly getToken: () => null | string;
-  /** Called on every 401; the page clears the token and goes to /sign-in. */
+  /** Called on every 401; the page forgets the session hint and goes to /sign-in. */
   readonly onUnauthorized: () => void;
 };
 
@@ -53,7 +52,10 @@ export const UNEXPECTED_RESPONSE = 'Unexpected response from the server';
 const REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_RETRY_AFTER_SECONDS = 1;
 
-/** The REST calls of the chat page. Every call carries the JWT as a Bearer token. */
+/**
+ * The REST calls of the chat page. No call carries a token: the browser sends the HttpOnly session
+ * cookie with every same-origin request, and the `Origin` header the server checks on unsafe ones.
+ */
 export class ChatApi {
   readonly #deps: ChatApiDeps;
 
@@ -122,7 +124,7 @@ export class ChatApi {
     );
   }
 
-  /** Exchanges the current JWT for a fresh one. */
+  /** Renews the session: the server sets fresh session cookies. */
   async refresh(): Promise<ApiOutcome<AuthResponse>> {
     return this.#request('POST', '/api/auth/refresh', undefined, parseWith(isAuthResponse));
   }
@@ -192,13 +194,13 @@ export class ChatApi {
     body: unknown,
     parse: Parse<T>,
   ): Promise<ApiOutcome<T>> {
-    const token = this.#deps.getToken();
-    if (token === null) {
-      this.#deps.onUnauthorized();
-      return { kind: 'unauthorized' };
-    }
-    const headers: Record<string, string> = { authorization: `Bearer ${token}` };
-    const init: RequestInit = { headers, method, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) };
+    const headers: Record<string, string> = {};
+    const init: RequestInit = {
+      credentials: 'same-origin',
+      headers,
+      method,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    };
     if (body !== undefined) {
       headers['content-type'] = 'application/json';
       init.body = JSON.stringify(body);

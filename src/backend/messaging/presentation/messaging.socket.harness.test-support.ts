@@ -35,6 +35,10 @@ export const ALICE = UserId.restore(1);
 export const BOB = UserId.restore(2);
 export const CAROL = UserId.restore(3);
 export const MALLORY = UserId.restore(9);
+/** The one origin the harness allows for cookie-authenticated upgrades. */
+export const APP_ORIGIN = 'http://localhost:3000';
+/** How long the harness gateway remembers a signed-out session. */
+export const SIGNED_OUT_MEMORY_MS = HOUR;
 export type Closed = { readonly code: number; readonly reason: string };
 export type FrameOf<T extends ServerFrame['type']> = Extract<ServerFrame, { type: T }>;
 type Waiter = {
@@ -125,6 +129,13 @@ export class Client {
 
 let current: Harness | null = null;
 
+/** Bun's WebSocket client accepts headers; the DOM typings only know the protocols overload. */
+// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- Bun's constructor overload
+const BunWebSocket = WebSocket as unknown as new (
+  url: string,
+  options: Bun.WebSocketOptions,
+) => WebSocket;
+
 export function hasType<T extends ServerFrame['type']>(
   frame: ServerFrame,
   type: T,
@@ -145,19 +156,25 @@ export async function closeCode(client: Client): Promise<number> {
 }
 
 export async function connect(harness: Harness, token: string): Promise<Client> {
-  const socket = new WebSocket(url(harness), [SOCKET_PROTOCOL, `${BEARER_PREFIX}${token}`]);
-  const client = new Client(socket);
-  harness.clients.push(client);
-  await new Promise<void>((resolve, reject) => {
-    socket.addEventListener('open', () => {
-      resolve();
-    });
-    socket.addEventListener('error', () => {
-      reject(new Error('WebSocket failed to open'));
-    });
-  });
+  const client = await open(
+    harness,
+    new WebSocket(url(harness), [SOCKET_PROTOCOL, `${BEARER_PREFIX}${token}`]),
+  );
   await client.next('ready');
   return client;
+}
+
+/** Like a browser: only `chat-rsa.v1` as the subprotocol, the token in the session cookie. */
+export async function connectWithCookie(
+  harness: Harness,
+  token: string,
+  origin: string = APP_ORIGIN,
+): Promise<Client> {
+  const options: Bun.WebSocketOptions = {
+    headers: { cookie: `chat_rsa_session=${token}`, origin },
+    protocols: [SOCKET_PROTOCOL],
+  };
+  return open(harness, new BunWebSocket(url(harness), options));
 }
 
 export async function room(
@@ -212,10 +229,12 @@ export function start(options: BucketPolicy | HarnessOptions = {}): Harness {
     listRooms: listRooms(rooms),
     logger: { error: () => null },
     now: () => scheduler.now,
+    origins: [APP_ORIGIN],
     receipt: new ReceiptUseCase(rooms, messages, receipts),
     rooms,
     scheduler,
     sendMessage: new SendMessageUseCase(rooms, messages),
+    signedOutMemoryMs: SIGNED_OUT_MEMORY_MS,
     verifier,
   });
   const muted = new Set<number>();
@@ -249,8 +268,12 @@ export async function stopHarness(): Promise<void> {
   }
 }
 
-export function upgradeRequest(harness: Harness, protocol: null | string): Request {
-  const headers = new Headers({ connection: 'Upgrade', upgrade: 'websocket' });
+export function upgradeRequest(
+  harness: Harness,
+  protocol: null | string,
+  extra: Record<string, string> = {},
+): Request {
+  const headers = new Headers({ connection: 'Upgrade', upgrade: 'websocket', ...extra });
   if (protocol !== null) {
     headers.set('sec-websocket-protocol', protocol);
   }
@@ -267,4 +290,18 @@ export async function waitUntil(condition: () => boolean): Promise<void> {
     await Bun.sleep(2);
   }
   expect(condition()).toBe(true);
+}
+
+async function open(harness: Harness, socket: WebSocket): Promise<Client> {
+  const client = new Client(socket);
+  harness.clients.push(client);
+  await new Promise<void>((resolve, reject) => {
+    socket.addEventListener('open', () => {
+      resolve();
+    });
+    socket.addEventListener('error', () => {
+      reject(new Error('WebSocket failed to open'));
+    });
+  });
+  return client;
 }

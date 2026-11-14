@@ -53,8 +53,8 @@ const CASES: ReadonlyArray<{
   {
     guard: isAuthResponse,
     name: 'isAuthResponse',
-    rejects: { token: [undefined, '', 7], user: [undefined, null, { id: 'one', name: 'alice' }, { id: 1 }] },
-    valid: { token: 'jwt', user: USER },
+    rejects: { user: [undefined, null, { id: 'one', name: 'alice' }, { id: 1 }] },
+    valid: { user: USER },
   },
   {
     guard: isHistoryPage,

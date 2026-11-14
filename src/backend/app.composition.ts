@@ -59,7 +59,10 @@ import {
 
 export type AppAdapters = {
   readonly cache: RedisClient;
-  readonly config: Pick<AppConfig, 'jwtSecret' | 'rateLimit'>;
+  readonly config: Pick<
+    AppConfig,
+    'appOrigins' | 'jwtSecret' | 'rateLimit' | 'sessionMaxAgeSeconds' | 'trustedProxyIps'
+  >;
   readonly hasher: PasswordHasher;
   readonly logger: Logger;
   readonly sql: SQL;
@@ -94,23 +97,31 @@ export function composeApp({
   const keys = new PostgresKeyDirectory(sql);
   const senderKeys = new PostgresSenderKeyRepository(sql);
   const listRooms = new ListRoomsUseCase(rooms);
+  const limiter = new ValkeyRateLimiter(cache);
 
   const gateway = createSocketGateway({
     listRooms,
     logger,
+    origins: config.appOrigins,
     receipt: new ReceiptUseCase(rooms, messages, receipts),
     rooms,
     sendMessage: new SendMessageUseCase(rooms, messages),
+    // As long as the revocation itself: by then every token of the session has expired.
+    signedOutMemoryMs: (TOKEN_LIFETIME_SECONDS + 60) * 1000,
     verifier,
   });
 
   return {
     auth: createAuthController(
       {
-        signIn: new SignInUseCase(users, hasher, tokens),
+        signIn: new SignInUseCase(users, hasher, tokens, {
+          limiter,
+          policy: config.rateLimit.signin,
+        }),
         signUp: new SignUpUseCase(users, hasher, tokens),
       },
       logger,
+      TOKEN_LIFETIME_SECONDS,
     ),
     messaging: {
       controller: createMessagingController({
@@ -132,12 +143,26 @@ export function composeApp({
       }),
       gateway,
       guards: createGuards({
-        limiter: new ValkeyRateLimiter(cache),
+        limiter,
         logger,
+        origins: config.appOrigins,
         policies: config.rateLimit,
+        trustedProxyIps: config.trustedProxyIps,
         verifier,
       }),
-      refresh: createRefreshController(new RefreshUseCase(verifier, users, tokens), logger),
+      refresh: createRefreshController(
+        new RefreshUseCase(
+          verifier,
+          users,
+          tokens,
+          { sessionMaxAgeSeconds: config.sessionMaxAgeSeconds },
+          (sessionId, expiresAt) => {
+            gateway.renewSession(sessionId, expiresAt);
+          },
+        ),
+        logger,
+        TOKEN_LIFETIME_SECONDS,
+      ),
       signOut: createSignOutController(
         new SignOutUseCase(verifier, revocations, (sessionId) => {
           gateway.closeSession(sessionId);

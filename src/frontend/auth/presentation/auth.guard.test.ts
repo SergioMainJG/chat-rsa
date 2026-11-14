@@ -1,28 +1,24 @@
 import { describe, expect, test } from 'bun:test';
 
-import { guardRoute } from './auth.guard.ts';
+import { guardRoute, sessionHintOf } from './auth.guard.ts';
 
 const NOW_MS = Date.UTC(2026, 10, 13, 12);
 
-function tokenWith(payload: unknown): string {
-  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  return `header.${encoded}.signature`;
-}
+const LIVE = String(NOW_MS / 1000 + 60);
+const EXPIRED = String(NOW_MS / 1000 - 1);
 
-const LIVE = tokenWith({ exp: NOW_MS / 1000 + 60, sub: '7' });
-const EXPIRED = tokenWith({ exp: NOW_MS / 1000 - 1, sub: '7' });
-
-describe('guardRoute', () => {
+describe('guardRoute (reads the chat_rsa_session_hint cookie, never the token)', () => {
   test('a members-only page lets a live session in', () => {
     expect(guardRoute('members', LIVE, NOW_MS)).toEqual({ kind: 'allow' });
   });
 
   test.each([
-    ['no token', null],
-    ['an expired token', EXPIRED],
-    ['a malformed token', 'not-a-jwt'],
-  ])('a members-only page sends %s to /sign-in', (_case, token) => {
-    expect(guardRoute('members', token, NOW_MS)).toEqual({ kind: 'redirect', path: '/sign-in' });
+    ['no hint', null],
+    ['an expired hint', EXPIRED],
+    ['a malformed hint', 'not-a-number'],
+    ['a JWT instead of a number', 'a.b.c'],
+  ])('a members-only page sends %s to /sign-in', (_case, hint) => {
+    expect(guardRoute('members', hint, NOW_MS)).toEqual({ kind: 'redirect', path: '/sign-in' });
   });
 
   test('a guests-only page sends a live session to /chat', () => {
@@ -30,9 +26,21 @@ describe('guardRoute', () => {
   });
 
   test.each([
-    ['no token', null],
-    ['an expired token', EXPIRED],
-  ])('a guests-only page lets %s in', (_case, token) => {
-    expect(guardRoute('guests', token, NOW_MS)).toEqual({ kind: 'allow' });
+    ['no hint', null],
+    ['an expired hint', EXPIRED],
+  ])('a guests-only page lets %s in', (_case, hint) => {
+    expect(guardRoute('guests', hint, NOW_MS)).toEqual({ kind: 'allow' });
+  });
+});
+
+describe('sessionHintOf', () => {
+  test.each([
+    ['', null],
+    ['other=1', null],
+    ['chat_rsa_session_hint=1800000000', '1800000000'],
+    ['a=1; chat_rsa_session_hint=1800000000; b=2', '1800000000'],
+    ['chat_rsa_session_hint=', null],
+  ])('reads document.cookie %p as %p', (cookies, expected) => {
+    expect(sessionHintOf(cookies)).toBe(expected);
   });
 });

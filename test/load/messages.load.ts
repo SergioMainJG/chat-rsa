@@ -1,13 +1,20 @@
 // k6 load test for the messaging feature: REST rooms, keys, history and receipts, plus live `/ws`
 // sessions. Run it through `bun run test:load [smoke|load|stress]`, which starts the pinned
 // grafana/k6 image and deletes every user this run created.
-// test/load/messages.load.sabotage.test.ts proves that each check below catches a real defect.
+// test/load/messages.load.checks.sabotage.test.ts proves that each check below catches a real defect.
 import type { Options, Scenario } from 'k6/options';
 
 import { check } from 'k6';
-import { b64encode } from 'k6/encoding';
+import { b64decode, b64encode } from 'k6/encoding';
 import { scenario } from 'k6/execution';
-import { batch, expectedStatuses, type RefinedResponse, request, type ResponseType } from 'k6/http';
+import {
+  batch,
+  CookieJar,
+  expectedStatuses,
+  type RefinedResponse,
+  request,
+  type ResponseType,
+} from 'k6/http';
 import { Counter } from 'k6/metrics';
 import { setTimeout } from 'k6/timers';
 import { WebSocket } from 'k6/websockets';
@@ -28,7 +35,10 @@ if (!/^[0-9a-z]{8,}$/u.test(RUN_ID)) {
 }
 /** Every messaging user is `load<RUN_ID>m<n>`, which the runner's cleanup pattern matches. */
 const NAME_PREFIX = `load${RUN_ID}m`;
-/** Users m0-m3 run the REST scenario, m4-m7 the live one and m8 the rate-limit burst. */
+/**
+ * Users m0-m3 run the REST scenario, m4-m7 the live one and m8 the rate-limit burst. Each live
+ * iteration also signs one of m0-m7 in again, in turn, for a session it then signs out.
+ */
 const GROUP_SIZE = 4;
 const USER_COUNT = 2 * GROUP_SIZE + 1;
 /** Messages sent per live iteration, read back in pages of HISTORY_PAGE. */
@@ -39,7 +49,17 @@ const FRAME_TIMEOUT_MS = 2000;
 const QUIET_MS = 300;
 /** Requests fired at once by one user: past its bucket (capacity 60, refill 10/s). */
 const BURST = 90;
+/** The JWT travels only in this HttpOnly cookie, never in a body (S4). */
+const SESSION_COOKIE = 'chat_rsa_session';
+/** The readable cookie holding the token's `exp`, for the frontend route guard. */
+const SESSION_HINT_COOKIE = 'chat_rsa_session_hint';
+/** The session cookies' `Max-Age`: one token lifetime (TOKEN_LIFETIME_SECONDS). */
+const TOKEN_LIFETIME_SECONDS = 3600;
+/** Close code of a socket whose session ended (CloseCode.AuthFailed). */
+const AUTH_FAILED = 4001;
 const JWT_SEGMENT = /^[\w-]+$/u;
+
+type Claims = Readonly<Record<string, unknown>>;
 
 type Frame = Readonly<Record<string, unknown>> & { readonly type: string };
 
@@ -56,7 +76,10 @@ type User = {
 
 // Budget against a real server with default limits: every request spends one token of the IP
 // bucket (120, refill 20/s) and an authenticated one also one of its user bucket (60, refill 10/s).
-// `smoke` stays below both; `stress` adds a burst that must be answered with 429.
+// Setup spends 18, a rest iteration 14 and a live one 12 (its 3 socket upgrades included). `smoke`
+// (96) stays below the bucket; `stress` (9 + 9 iterations within 8 s: 252 against 120 + 8 * 20)
+// fits it, then bursts once the other scenarios are done, and that burst must be answered with 429.
+// `load` asks for more than the IP refill: raise RATE_LIMIT_IP_* for it.
 const PROFILES: Readonly<Record<string, Scenarios>> = {
   load: {
     live: {
@@ -82,12 +105,34 @@ const PROFILES: Readonly<Record<string, Scenarios>> = {
     live: { exec: 'live', executor: 'shared-iterations', iterations: 3, vus: 1 },
     rest: { exec: 'rest', executor: 'shared-iterations', iterations: 3, vus: 1 },
   },
-  // Concurrent sessions in shared rooms, plus one user bursting past its bucket. Against a real
-  // server from one IP the IP bucket also runs out: raise RATE_LIMIT_IP_* for this profile.
+  // Overlapping sessions in shared rooms, then one user bursting past its bucket after `live` and
+  // `rest` are done, when the IP bucket has refilled.
   stress: {
-    live: { exec: 'live', executor: 'shared-iterations', iterations: 12, vus: 4 },
-    rate_limit: { exec: 'rateLimit', executor: 'shared-iterations', iterations: 1, vus: 1 },
-    rest: { exec: 'rest', executor: 'shared-iterations', iterations: 12, vus: 4 },
+    live: {
+      duration: '8s',
+      exec: 'live',
+      executor: 'constant-arrival-rate',
+      maxVUs: 8,
+      preAllocatedVUs: 4,
+      rate: 1,
+      timeUnit: '1s',
+    },
+    rate_limit: {
+      exec: 'rateLimit',
+      executor: 'shared-iterations',
+      iterations: 1,
+      startTime: '14s',
+      vus: 1,
+    },
+    rest: {
+      duration: '8s',
+      exec: 'rest',
+      executor: 'constant-arrival-rate',
+      maxVUs: 4,
+      preAllocatedVUs: 2,
+      rate: 1,
+      timeUnit: '1s',
+    },
   },
 };
 
@@ -153,13 +198,66 @@ function hasErrorShape(
     correlationId.length > 0 &&
     typeof message === 'string' &&
     message.length > 0 &&
-    typeof timestamp === 'string' &&
-    new Date(timestamp).toISOString() === timestamp
+    isIsoTimestamp(timestamp)
   );
 }
 
+/** An exact ISO 8601 instant; a malformed value is a failed check, never a thrown RangeError. */
+function isIsoTimestamp(value: unknown): boolean {
+  return (
+    typeof value === 'string' &&
+    Number.isFinite(Date.parse(value)) &&
+    new Date(value).toISOString() === value
+  );
+}
+
+/** The claims of a JWT whose three segments are base64url and whose header says HS256; else null. */
+function claimsOf(token: string): Claims | null {
+  const segments = token.split('.');
+  const header = jwtPart(segments[0]);
+  const payload = jwtPart(segments[1]);
+  return segments.length === 3 && JWT_SEGMENT.test(segments[2] ?? '') && header?.alg === 'HS256'
+    ? payload
+    : null;
+}
+
+/** The decoded JSON of one base64url JWT segment, or null when it is not a JSON object. */
+function jwtPart(segment: string | undefined): Claims | null {
+  if (segment === undefined || !JWT_SEGMENT.test(segment)) {
+    return null;
+  }
+  try {
+    const value: unknown = JSON.parse(b64decode(segment, 'rawurl', 's'));
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The attributes of the `Set-Cookie` value for `name`, lower-cased (`samesite=strict`, `path=/`).
+ * k6 joins repeated headers with ", " and exposes neither SameSite nor the raw attributes.
+ */
+function cookieAttributes(response: RefinedResponse<ResponseType>, name: string): string[] {
+  const cookie = (response.headers['Set-Cookie'] ?? '')
+    .split(', ')
+    .find((value) => value.startsWith(`${name}=`));
+  return cookie === undefined
+    ? []
+    : cookie
+        .split(';')
+        .slice(1)
+        .map((attribute) => attribute.trim().toLowerCase());
+}
+
+/** The session cookie's JWT, or null when the response set none. */
 function randomBase64(bytes: number): string {
   return b64encode(crypto.getRandomValues(new Uint8Array(bytes)).buffer, 'std');
+}
+
+function sessionTokenOf(response: RefinedResponse<ResponseType>): null | string {
+  const token = response.cookies[SESSION_COOKIE]?.[0]?.value;
+  return token === undefined || token === '' ? null : token;
 }
 
 /**
@@ -171,6 +269,8 @@ function api(
   path: string,
   init: {
     readonly body?: unknown;
+    /** Sends the JWT as the session cookie only, with an empty jar and no bearer header. */
+    readonly cookie?: string;
     readonly expected: readonly number[];
     readonly name?: string;
     readonly token?: string;
@@ -183,12 +283,17 @@ function api(
   if (init.token !== undefined) {
     headers.authorization = `Bearer ${init.token}`;
   }
+  if (init.cookie !== undefined) {
+    // An explicit header: the VU's jar would otherwise add whatever session it last received.
+    headers.cookie = `${SESSION_COOKIE}=${init.cookie}`;
+  }
   return request(
     method,
     `${BASE_URL}${path}`,
     init.body === undefined ? null : JSON.stringify(init.body),
     {
       headers,
+      ...(init.cookie !== undefined && { jar: new CookieJar() }),
       responseCallback: expectedStatuses(...init.expected),
       tags: { name: init.name ?? path },
     },
@@ -212,11 +317,13 @@ function signUp(name: string): User {
       ? api('POST', '/api/auth/sign-in', { body: { name, password: PASSWORD }, expected: [200] })
       : created;
   const body = bodyOf(session);
+  // The JWT is never in the body: the server sets it in the HttpOnly session cookie (S4).
+  const token = sessionTokenOf(session);
   if (
     !isRecord(body) ||
     !isRecord(body.user) ||
     typeof body.user.id !== 'number' ||
-    typeof body.token !== 'string'
+    token === null
   ) {
     throw new Error(`setup: could not sign in ${name} (${session.status}) at ${BASE_URL}`);
   }
@@ -224,13 +331,13 @@ function signUp(name: string): User {
   const published = api('PUT', '/api/keys/identity', {
     body: { publicKey },
     expected: [200],
-    token: body.token,
+    token,
   });
   const key = bodyOf(published);
   if (!isRecord(key) || key.publicKey !== publicKey || key.userId !== body.user.id) {
     throw new Error(`setup: identity key of ${name} was not published (${published.status})`);
   }
-  return { id: body.user.id, name, publicKey, token: body.token };
+  return { id: body.user.id, name, publicKey, token };
 }
 
 /** The group's users rotated by iteration, so no single user bucket carries a whole scenario. */
@@ -293,6 +400,8 @@ function sortedIds(list: readonly number[]): string {
 /** REST surface: rooms, lookup, keys, membership rotation, sender keys, receipts and refresh. */
 type Client = {
   readonly close: () => void;
+  /** Resolves with the close code once the server closed the socket, or null after the timeout. */
+  readonly closed: () => Promise<null | number>;
   /** Every frame received matching `match`, consumed or not. */
   readonly count: (match: (frame: Frame) => boolean) => number;
   /** Resolves with (and consumes) the first matching frame, or null after the timeout. */
@@ -360,6 +469,7 @@ export function rest(data: SetupData): void {
       sameMembers(afterLeave, [owner.id, peer.id]),
   });
   senderKeys(owner, peer, room.id, room.keyEpoch + 2);
+  listMembers(owner, peer, outsider, room.id);
 
   const history = api('GET', `/api/rooms/${room.id}/messages`, {
     expected: [403],
@@ -382,22 +492,43 @@ export function rest(data: SetupData): void {
       return JSON.stringify(ids) === sortedIds([owner.id, peer.id]);
     },
   });
-  const refreshed = api('POST', '/api/auth/refresh', { expected: [200], token: owner.token });
-  check(refreshed, {
-    'refresh returns {user, token}': (r) => {
-      const body = bodyOf(r);
+  refresh(owner);
+}
+
+/** Members see each other's names; anyone else gets the same 403 as for a missing room. */
+function listMembers(owner: User, peer: User, outsider: User, roomId: string): void {
+  const path = `/api/rooms/${roomId}/members`;
+  const listed = api('GET', path, {
+    expected: [200],
+    name: '/api/rooms/:roomId/members',
+    token: peer.token,
+  });
+  const refused = api('GET', path, {
+    expected: [403],
+    name: '/api/rooms/:roomId/members',
+    token: outsider.token,
+  });
+  check(listed, {
+    'room members are listed with their names': (r) => {
+      const found = recordsOf(bodyOf(r));
       return (
-        isRecord(body) &&
-        isRecord(body.user) &&
-        body.user.id === owner.id &&
-        typeof body.token === 'string' &&
-        body.token.split('.').length === 3 &&
-        body.token.split('.').every((segment) => JWT_SEGMENT.test(segment))
+        r.status === 200 &&
+        found.length === 2 &&
+        [owner, peer].every((member) =>
+          found.some((entry) => entry.id === member.id && entry.name === member.name),
+        )
       );
     },
   });
+  check(refused, {
+    'non-member members list is 403': (r) => hasErrorShape(r, 403, 'Forbidden', path),
+  });
 }
 
+/**
+ * `POST /api/auth/refresh` keeps the session (`sid`, `sst`) in a new token that only travels in the
+ * session cookie, and that cookie alone then authenticates a request.
+ */
 async function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -415,6 +546,59 @@ function frameOf(data: unknown): Frame | null {
 
 function isFrame(value: unknown): value is Frame {
   return isRecord(value) && typeof value.type === 'string';
+}
+
+function refresh(owner: User): void {
+  const refreshed = api('POST', '/api/auth/refresh', { expected: [200], token: owner.token });
+  const token = sessionTokenOf(refreshed) ?? '';
+  const claims = claimsOf(token);
+  const previous = claimsOf(owner.token);
+  check(refreshed, {
+    'refreshed token keeps its session': () =>
+      claims?.sub === String(owner.id) &&
+      claims.name === owner.name &&
+      typeof claims.exp === 'number' &&
+      claims.exp * 1000 > Date.now() &&
+      typeof claims.sid === 'string' &&
+      claims.sid !== '' &&
+      claims.sid === previous?.sid &&
+      typeof claims.sst === 'number' &&
+      claims.sst === previous.sst,
+    'refresh returns {user} and a fresh session cookie': (r) => {
+      const body = bodyOf(r);
+      return (
+        r.status === 200 &&
+        isJsonResponse(r) &&
+        isRecord(body) &&
+        isRecord(body.user) &&
+        body.user.id === owner.id &&
+        body.user.name === owner.name &&
+        !('token' in body) &&
+        token !== ''
+      );
+    },
+    'refresh sets an HttpOnly, Secure session cookie for one token lifetime': (r) => {
+      // k6 exposes snake_case attributes, unlike the camelCase names in @types/k6.
+      const cookie: Readonly<Record<string, unknown>> = { ...r.cookies[SESSION_COOKIE]?.[0] };
+      return (
+        cookie.http_only === true &&
+        cookie.secure === true &&
+        cookie.max_age === TOKEN_LIFETIME_SECONDS
+      );
+    },
+    'refresh sets a SameSite=Strict session cookie on Path=/': (r) => {
+      const attributes = cookieAttributes(r, SESSION_COOKIE);
+      return attributes.includes('samesite=strict') && attributes.includes('path=/');
+    },
+    'refresh sets the hint cookie to the new exp': (r) =>
+      typeof claims?.exp === 'number' &&
+      r.cookies[SESSION_HINT_COOKIE]?.[0]?.value === String(claims.exp),
+  });
+  const viaCookie = api('GET', '/api/rooms', { cookie: token, expected: [200] });
+  check(viaCookie, {
+    'the session cookie alone authenticates a request': (r) =>
+      r.status === 200 && Array.isArray(bodyOf(r)),
+  });
 }
 
 function senderKeys(sender: User, recipient: User, roomId: string, keyEpoch: number): void {
@@ -460,18 +644,29 @@ function senderKeys(sender: User, recipient: User, roomId: string, keyEpoch: num
   });
 }
 
-/** Opens `/ws` with the JWT as a subprotocol, as the browser does; null when it fails to open. */
-async function connect(user: User): Promise<Client | null> {
+/** Opens `/ws` with the JWT as a bearer subprotocol; null when it fails to open. */
+async function connect(token: string): Promise<Client | null> {
   return new Promise((resolve) => {
     const ws = new WebSocket(WS_URL, null, {
-      headers: { 'Sec-WebSocket-Protocol': `${SOCKET_PROTOCOL}, bearer.${user.token}` },
+      headers: { 'Sec-WebSocket-Protocol': `${SOCKET_PROTOCOL}, bearer.${token}` },
       tags: { name: '/ws' },
     });
     const seen: Frame[] = [];
     const pending: Frame[] = [];
+    let closeCode: null | number = null;
     const client: Client = {
       close: () => {
         ws.close();
+      },
+      closed: async () => {
+        const deadline = Date.now() + FRAME_TIMEOUT_MS;
+        for (;;) {
+          if (closeCode !== null || Date.now() >= deadline) {
+            return closeCode;
+          }
+          // eslint-disable-next-line no-await-in-loop -- waits for the close event
+          await delay(20);
+        }
       },
       count: (match) => seen.filter((frame) => match(frame)).length,
       next: async (match) => {
@@ -498,6 +693,12 @@ async function connect(user: User): Promise<Client | null> {
         seen.push(frame);
         pending.push(frame);
       }
+    });
+    ws.addEventListener('close', (event) => {
+      // k6 passes the close frame's code, which @types/k6 does not declare.
+      const fields: Readonly<Record<string, unknown>> = { ...event };
+      const { code } = fields;
+      closeCode = typeof code === 'number' ? code : 0;
     });
     ws.addEventListener('open', () => {
       resolve(client);
@@ -563,12 +764,18 @@ async function fanOut(
         stored.senderId === senderId &&
         stored.keyEpoch === room.keyEpoch,
     });
+    const broadcastId = messageOf(delivered)?.id;
     check(delivered, {
+      // The same message the ack stored, when there is an ack; the ack is checked on its own.
       'message.new reaches the other member': (frame) =>
-        frame !== null && messageOf(frame)?.id === stored?.id,
+        frame !== null &&
+        typeof broadcastId === 'string' &&
+        (ack === null || broadcastId === stored?.id),
     });
-    if (typeof stored?.id === 'string') {
-      ids.push(stored.id);
+    // Without an ack, the later steps go on with the id the fan-out carried.
+    const id = typeof stored?.id === 'string' ? stored.id : broadcastId;
+    if (typeof id === 'string') {
+      ids.push(id);
     }
   }
   return { ids, keys };
@@ -578,11 +785,12 @@ async function fanOut(
 function checkHistory(reader: User, roomId: string, sentIds: readonly string[]): void {
   const pages = readHistory(reader, roomId);
   const all = pages?.flat() ?? [];
+  // Each check covers one property: order (ties allowed), the set of ids, no repeats, page size.
   check(pages, {
     'history is newest first': (list) =>
-      list !== null && all.every((id, index) => index === 0 || id < (all[index - 1] ?? '')),
+      list !== null && all.every((id, index) => index === 0 || id <= (all[index - 1] ?? '')),
     'history pages are complete': () =>
-      JSON.stringify(all.toSorted()) === JSON.stringify(sentIds.toSorted()),
+      JSON.stringify([...new Set(all)].toSorted()) === JSON.stringify(sentIds.toSorted()),
     'history pages are disjoint': () => new Set(all).size === all.length,
     'history pages hold at most the limit': (list) =>
       list?.every((page) => page.length <= HISTORY_PAGE) ?? false,
@@ -622,8 +830,8 @@ export async function live(data: SetupData): Promise<void> {
   if (!room) {
     return;
   }
-  const sender = await connect(owner);
-  const receiver = await connect(peer);
+  const sender = await connect(owner.token);
+  const receiver = await connect(peer.token);
   try {
     check(null, { 'ws upgrade opens both sockets': () => sender !== null && receiver !== null });
     if (!sender || !receiver) {
@@ -644,8 +852,28 @@ export async function live(data: SetupData): Promise<void> {
     sender?.close();
     receiver?.close();
   }
+  await sessionSockets(data.users[scenario.iterationInTest % (2 * GROUP_SIZE)]);
 }
 
+function isAuthRefreshed(frame: Frame): boolean {
+  return frame.type === 'auth.refreshed';
+}
+
+/** `auth.refreshed` announces exactly the `exp` of `token`. */
+function announces(frame: Frame | null, token: null | string): boolean {
+  const exp = token === null ? undefined : claimsOf(token)?.exp;
+  return (
+    frame !== null &&
+    typeof exp === 'number' &&
+    frame.expiresAt === new Date(exp * 1000).toISOString()
+  );
+}
+
+/**
+ * A fresh session of `user` with one open socket: an HTTP refresh pushes `auth.refreshed` to it, an
+ * `auth.refresh` frame with the new token is accepted, and signing out closes it with 4001. Users
+ * take turns, so no name spends more than a few tokens of its sign-in bucket.
+ */
 function isReady(frame: Frame): boolean {
   return frame.type === 'ready';
 }
@@ -727,6 +955,44 @@ async function rotation(
     'a stale-epoch send is refused with conflict': (frame) =>
       frame?.code === 'conflict' && receiver.count(isNewMessage(staleKey)) === 0,
   });
+}
+
+async function sessionSockets(user: undefined | User): Promise<void> {
+  if (!user) {
+    throw new Error('live: the session user is missing');
+  }
+  const signedIn = api('POST', '/api/auth/sign-in', {
+    body: { name: user.name, password: PASSWORD },
+    expected: [200],
+  });
+  const token = sessionTokenOf(signedIn) ?? '';
+  const socket = await connect(token);
+  try {
+    await socket?.next(isReady);
+    const refreshed = api('POST', '/api/auth/refresh', { expected: [200], token });
+    const renewed = sessionTokenOf(refreshed);
+    const pushed = (await socket?.next(isAuthRefreshed)) ?? null;
+    check(pushed, {
+      'an HTTP refresh pushes auth.refreshed to the session socket': (frame) =>
+        announces(frame, renewed),
+    });
+    socket?.send({ token: renewed ?? '', type: 'auth.refresh' });
+    const accepted = (await socket?.next(isAuthRefreshed)) ?? null;
+    check(accepted, {
+      'an auth.refresh frame with a fresh token is accepted': (frame) => announces(frame, renewed),
+    });
+    const signedOut = api('POST', '/api/auth/sign-out', {
+      expected: [204],
+      token: renewed ?? token,
+    });
+    const code = (await socket?.closed()) ?? null;
+    check(code, {
+      'sign-out closes the session socket with 4001': (closed) =>
+        signedOut.status === 204 && closed === AUTH_FAILED,
+    });
+  } finally {
+    socket?.close();
+  }
 }
 
 /** Stress only: one user fires BURST requests at once and must be answered with 429s. */

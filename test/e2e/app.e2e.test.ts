@@ -6,14 +6,16 @@ import type { AuthResponse } from '../../src/shared/contracts/auth.contract.ts';
 import { loadConfig } from '../../src/backend/shared/config/env.config.ts';
 import { createPostgresClient } from '../../src/backend/shared/database/postgres.config.ts';
 import { createServer } from '../../src/backend/shared/http/app.server.ts';
+import { InMemoryRateLimiter } from '../../src/backend/shared/rate-limit/rate-limit.in-memory.ts';
 import { SignInUseCase } from '../../src/backend/user/application/user.sign-in.use-case.ts';
 import { SignUpUseCase } from '../../src/backend/user/application/user.sign-up.use-case.ts';
 import { PostgresUserDatasource } from '../../src/backend/user/infrastructure/user.datasource.postgresql.ts';
 import { UserRepositoryImpl } from '../../src/backend/user/infrastructure/user.repository.impl.ts';
 import { applyUserSchema } from '../../src/backend/user/infrastructure/user.schema.ts';
 import { Argon2PasswordHasher } from '../../src/backend/user/infrastructure/user.security.argon2.ts';
-import { JoseTokenIssuer } from '../../src/backend/user/infrastructure/user.security.jose.ts';
+import { JoseTokenIssuer, TOKEN_LIFETIME_SECONDS } from '../../src/backend/user/infrastructure/user.security.jose.ts';
 import { createAuthController } from '../../src/backend/user/presentation/user.controller.ts';
+import { sessionTokenOf, setCookieOf } from '../support/session-cookie.test-support.ts';
 
 const SECRET = 'e2e-secret';
 const config = loadConfig();
@@ -24,7 +26,10 @@ const tokens = new JoseTokenIssuer(SECRET);
 const server = createServer({
   auth: createAuthController(
     {
-      signIn: new SignInUseCase(users, hasher, tokens),
+      signIn: new SignInUseCase(users, hasher, tokens, {
+        limiter: new InMemoryRateLimiter(),
+        policy: config.rateLimit.signin,
+      }),
       signUp: new SignUpUseCase(users, hasher, tokens),
     },
     {
@@ -32,6 +37,7 @@ const server = createServer({
         console.error(error);
       },
     },
+    TOKEN_LIFETIME_SECONDS,
   ),
   port: 0,
 });
@@ -61,7 +67,7 @@ describe('application over HTTP', () => {
   test('GET / serves the frontend', async () => {
     const response = await fetch(server.url);
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('<title>chat-rsa</title>');
+    expect(await response.text()).toContain('<title>Komwasai · Mensajería cifrada de extremo a extremo</title>');
   });
 
   test('unknown routes return 404 in the shared error format', async () => {
@@ -90,14 +96,22 @@ describe('application over HTTP', () => {
 });
 
 describe('auth over HTTP', () => {
-  test('POST /api/auth/sign-up creates the user and returns {user, token}', async () => {
+  test('POST /api/auth/sign-up creates the user, returns {user} only and sets the session cookies', async () => {
     const response = await post('/api/auth/sign-up', { name, password });
     const body: AuthResponse = await response.json();
 
     expect(response.status).toBe(201);
-    expect(body).toEqual({ token: expect.any(String), user: { id: expect.any(Number), name } });
-    const { payload } = await jwtVerify(body.token, new TextEncoder().encode(SECRET));
+    expect(body).toEqual({ user: { id: expect.any(Number), name } });
+    const token = sessionTokenOf(response);
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(SECRET));
     expect(payload.sub).toBe(String(body.user.id));
+    expect(typeof payload.sst).toBe('number');
+    expect(setCookieOf(response, 'chat_rsa_session')).toBe(
+      `chat_rsa_session=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=3600`,
+    );
+    expect(setCookieOf(response, 'chat_rsa_session_hint')).toBe(
+      `chat_rsa_session_hint=${payload.exp}; Secure; SameSite=Strict; Path=/; Max-Age=3600`,
+    );
 
     const [row] = await sql`SELECT password FROM users WHERE name = ${name}`;
     expect(row.password).toStartWith('$argon2id$');
@@ -117,11 +131,15 @@ describe('auth over HTTP', () => {
     });
   });
 
-  test('POST /api/auth/sign-in returns {user, token} for valid credentials', async () => {
+  test('POST /api/auth/sign-in returns {user} and sets both session cookies for valid credentials', async () => {
     const response = await post('/api/auth/sign-in', { name, password });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ token: expect.any(String), user: { id: expect.any(Number), name } });
+    expect(await response.json()).toEqual({ user: { id: expect.any(Number), name } });
+    expect(sessionTokenOf(response).split('.')).toHaveLength(3);
+    expect(setCookieOf(response, 'chat_rsa_session_hint')).toMatch(
+      /^chat_rsa_session_hint=\d+; Secure; SameSite=Strict; Path=\/; Max-Age=3600$/u,
+    );
   });
 
   test('POST /api/auth/sign-in rejects a wrong password with 401', async () => {

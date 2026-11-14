@@ -33,6 +33,15 @@ export type EpochKeeperDeps = {
       readonly roomId: string;
       readonly selfId: number;
     }) => Promise<SenderKeyEnvelopeUpload[]>;
+    readonly trustIdentityKeys: (input: {
+      readonly members: readonly EpochMember[];
+      readonly selfId: number;
+    }) => Promise<void>;
+    /** Pins first-sight identity keys; returns the members whose key differs from its pin (S5). */
+    readonly verifyIdentityKeys: (input: {
+      readonly members: readonly EpochMember[];
+      readonly selfId: number;
+    }) => Promise<number[]>;
   };
   readonly queue: EnvelopeRetryQueue;
   readonly selfId: number;
@@ -126,6 +135,8 @@ export class EnvelopeRetryQueue {
  * upload the same batch twice at once.
  */
 export class EpochKeeper {
+  /** Members whose identity key no longer matches its pin, with the new key, by room (S5). */
+  readonly #changed = new Map<string, readonly EpochMember[]>();
   readonly #deps: EpochKeeperDeps;
   readonly #prepared = new Set<string>();
   #queue: Promise<unknown> = Promise.resolve();
@@ -134,13 +145,19 @@ export class EpochKeeper {
     this.#deps = deps;
   }
 
+  /** The members of the room whose identity key changed since it was pinned, in server order. */
+  changedMembers(roomId: string): readonly number[] {
+    return (this.#changed.get(roomId) ?? []).map(({ userId }) => userId);
+  }
+
   /**
    * True when the epoch has an own chain key whose envelopes were uploaded. Stored batches are
    * retried first; false means sending must wait (the outbox keeps the message).
    *
    * `memberIds` are the room's members. While one of them has not published an identity key yet,
    * nothing is prepared and the result is false: the chain key is non-extractable once created, so
-   * a member left out of the first batch could never be given an envelope for this epoch (S4).
+   * a member left out of the first batch could never be given an envelope for this epoch (S4). The
+   * same holds while a member's identity key differs from its pin (S5): see `changedMembers`.
    */
   async ensureEpoch(
     roomId: string,
@@ -155,16 +172,30 @@ export class EpochKeeper {
         if (keys.kind !== 'ok') {
           return false;
         }
+        const members = keys.value.map(({ publicKey, userId }) => ({
+          publicKeyBase64: publicKey,
+          userId,
+        }));
+        const changed = await this.#deps.crypto.verifyIdentityKeys({
+          members,
+          selfId: this.#deps.selfId,
+        });
+        if (changed.length > 0) {
+          // Nobody in the room gets the chain key, so a substituted key never receives it (S5).
+          this.#changed.set(
+            roomId,
+            members.filter(({ userId }) => changed.includes(userId)),
+          );
+          return false;
+        }
+        this.#changed.delete(roomId);
         const published = new Set(keys.value.map(({ userId }) => userId));
         if (memberIds.some((memberId) => !published.has(memberId))) {
           return false;
         }
         const envelopes = await this.#deps.crypto.prepareEpoch({
           keyEpoch,
-          members: keys.value.map(({ publicKey, userId }) => ({
-            publicKeyBase64: publicKey,
-            userId,
-          })),
+          members,
           roomId,
           selfId: this.#deps.selfId,
         });
@@ -187,6 +218,20 @@ export class EpochKeeper {
     return this.#exclusive(async () => {
       await this.#retryAll();
       return this.#deps.queue.size === 0;
+    });
+  }
+
+  /**
+   * Re-pins the keys that `changedMembers` reported for the room: the keys the warning was about,
+   * not whatever the server answers next (a further change is detected again).
+   */
+  async trustChangedKeys(roomId: string): Promise<void> {
+    await this.#exclusive(async () => {
+      const members = this.#changed.get(roomId);
+      if (members) {
+        await this.#deps.crypto.trustIdentityKeys({ members, selfId: this.#deps.selfId });
+        this.#changed.delete(roomId);
+      }
     });
   }
 

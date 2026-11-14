@@ -37,8 +37,10 @@ import {
 } from '../presentation/chat.typing.ts';
 import {
   displayName,
+  keyChangeNotice,
   type MessageEntry,
   type MessageItem,
+  messageKey,
   parseMemberNames,
   type RoomHeader,
   type RoomItem,
@@ -55,7 +57,10 @@ export type ChatControllerDeps = {
     readonly onFrame: (frame: ServerFrame) => void;
     readonly onState: (state: ConnectionState) => void;
   }) => ConnectionPort;
-  readonly crypto: Pick<SenderKeySession, 'decrypt' | 'encrypt' | 'prepareEpoch'>;
+  readonly crypto: Pick<
+    SenderKeySession,
+    'decrypt' | 'encrypt' | 'prepareEpoch' | 'trustIdentityKeys' | 'verifyIdentityKeys'
+  >;
   readonly formatTime: (iso: string) => string;
   /** `document.visibilityState === 'visible'`: read receipts wait while the tab is hidden. */
   readonly isDocumentVisible: () => boolean;
@@ -72,6 +77,11 @@ export type ChatControllerDeps = {
 export type ChatView = {
   readonly notify: (message: string) => void;
   readonly renderConnection: (state: ConnectionState) => void;
+  /**
+   * The open room's identity key warnings (S5), one `keyChangeNotice` per member whose key changed;
+   * [] clears them. `trustNewKeys` is the "Trust new key" action.
+   */
+  readonly renderKeyWarnings?: (warnings: readonly string[]) => void;
   readonly renderMessages: (items: readonly MessageItem[], hasOlder: boolean) => void;
   readonly renderRoom: (header: null | RoomHeader) => void;
   readonly renderRooms: (rooms: readonly RoomItem[]) => void;
@@ -353,13 +363,35 @@ export class ChatController {
     const room = this.#rooms.get(roomId);
     const work: Array<Promise<unknown>> = [this.#loadReceipts(roomId)];
     if (room) {
-      work.push(this.#keeper.ensureEpoch(room.id, room.keyEpoch, room.memberIds));
+      work.push(this.#ensureEpoch(room.id, room.keyEpoch, room.memberIds));
     }
     if (!this.#historyRequested.has(roomId)) {
       this.#historyRequested.add(roomId);
       work.push(this.loadOlder());
     }
     await Promise.all(work);
+  }
+
+  /**
+   * "Trust new key" (S5): re-pins the changed identity keys of the room (the open one by default),
+   * clears its warning and resumes: the epoch is prepared and the paused messages are flushed.
+   */
+  async trustNewKeys(roomId: null | string = this.#activeRoomId): Promise<void> {
+    const room = roomId === null ? undefined : this.#rooms.get(roomId);
+    if (!room) {
+      return;
+    }
+    await this.#keeper.trustChangedKeys(room.id);
+    this.#renderKeyWarnings();
+    await this.#ensureEpoch(room.id, room.keyEpoch, room.memberIds);
+    if (this.#retryTimer === null) {
+      void this.#flusher.flush();
+    } else {
+      // The flush stopped on this room: resume it now instead of waiting for the retry.
+      this.#deps.timers.clearTimeout(this.#retryTimer);
+      this.#retryTimer = null;
+      this.#flusher.onReady();
+    }
   }
 
   /** Searches the decrypted local store only; the server never sees the query (S15). */
@@ -431,7 +463,7 @@ export class ChatController {
   #addQueued(item: OutboxItem): void {
     this.#queuedSeq += 1;
     this.#queuedRooms.set(item.idempotencyKey, item.roomId);
-    this.#roomEntries(item.roomId).set(item.idempotencyKey, {
+    this.#roomEntries(item.roomId).set(this.#ownKey(item.idempotencyKey), {
       createdAt: item.queuedAt,
       failed: false,
       id: null,
@@ -459,6 +491,19 @@ export class ChatController {
     }
     const local = await this.#localTextsOf(message.roomId);
     return local.get(message.id) ?? null;
+  }
+
+  /** `EpochKeeper.ensureEpoch`, then redraws the key warnings it may have found (S5). */
+  async #ensureEpoch(
+    roomId: string,
+    keyEpoch: number,
+    memberIds?: readonly number[],
+  ): Promise<boolean> {
+    const ready = await this.#keeper.ensureEpoch(roomId, keyEpoch, memberIds);
+    if (roomId === this.#activeRoomId) {
+      this.#renderKeyWarnings();
+    }
+    return ready;
   }
 
   /**
@@ -575,7 +620,7 @@ export class ChatController {
 
   #onAck(message: MessageView): void {
     const entries = this.#roomEntries(message.roomId);
-    const queued = entries.get(message.idempotencyKey);
+    const queued = entries.get(this.#ownKey(message.idempotencyKey));
     this.#queuedRooms.delete(message.idempotencyKey);
     this.#conflicts.delete(message.idempotencyKey);
     if (queued?.text === undefined || queued.text === null) {
@@ -586,7 +631,7 @@ export class ChatController {
       });
       return;
     }
-    entries.set(message.idempotencyKey, toEntry(message, queued.text));
+    entries.set(this.#ownKey(message.idempotencyKey), toEntry(message, queued.text));
     this.#setStatus(message.idempotencyKey, 'delivered');
     this.#remember(message, queued.text);
   }
@@ -611,9 +656,9 @@ export class ChatController {
     await this.#deps.outbox.remove(key);
     this.#queuedRooms.delete(key);
     if (roomId !== undefined) {
-      const entry = this.#roomEntries(roomId).get(key);
+      const entry = this.#roomEntries(roomId).get(this.#ownKey(key));
       if (entry) {
-        this.#roomEntries(roomId).set(key, { ...entry, failed: true });
+        this.#roomEntries(roomId).set(this.#ownKey(key), { ...entry, failed: true });
       }
       this.#renderMessages(roomId);
     }
@@ -682,7 +727,7 @@ export class ChatController {
 
   async #onNewMessage(message: MessageView): Promise<void> {
     const own = message.senderId === this.#selfId;
-    if (own && this.#roomEntries(message.roomId).has(message.idempotencyKey)) {
+    if (own && this.#roomEntries(message.roomId).has(this.#ownKey(message.idempotencyKey))) {
       this.#onAck(message);
     } else {
       await this.#receive(message);
@@ -717,7 +762,7 @@ export class ChatController {
     await this.#reloadRooms();
     await Promise.all(
       [...this.#rooms.values()].map(async (room) =>
-        this.#keeper.ensureEpoch(room.id, room.keyEpoch, room.memberIds),
+        this.#ensureEpoch(room.id, room.keyEpoch, room.memberIds),
       ),
     );
     this.flushReads();
@@ -755,7 +800,7 @@ export class ChatController {
     }
     // Membership changed: refresh the member lists, then distribute a chain key for the new epoch.
     await this.#reloadRooms();
-    await this.#keeper.ensureEpoch(roomId, keyEpoch, this.#rooms.get(roomId)?.memberIds);
+    await this.#ensureEpoch(roomId, keyEpoch, this.#rooms.get(roomId)?.memberIds);
   }
 
   async #onSenderKeys(roomId: string, keyEpoch: number): Promise<void> {
@@ -791,12 +836,19 @@ export class ChatController {
     }, TYPING_TTL_MS);
   }
 
-  /** Decrypts a stored message and records it; one that fails waits for new sender keys. */
+  /**
+   * Decrypts a stored message and records it; one that fails waits for new sender keys. A failed
+   * decryption keeps only the text this same message already had: idempotency keys are unique per
+   * sender, so another member may reuse one, and must never replace or lend text to this entry.
+   */
   async #receive(message: MessageView): Promise<void> {
     const text = await this.#decrypt(message);
-    const key = message.idempotencyKey;
+    const key = messageKey(message.senderId, message.idempotencyKey);
     const entries = this.#roomEntries(message.roomId);
-    entries.set(key, toEntry(message, text ?? entries.get(key)?.text ?? null));
+    const previous = entries.get(key);
+    const sameMessage =
+      previous !== undefined && (previous.id === null || previous.id === message.id);
+    entries.set(key, toEntry(message, text ?? (sameMessage ? previous.text : null)));
     if (text === null) {
       this.#undecrypted.set(message.id, message);
     } else {
@@ -809,7 +861,7 @@ export class ChatController {
       const read = [...readers].some((receipt) =>
         readReceiptCovers(receipt, { messageId: message.id, ownUserId }),
       );
-      this.#setStatus(key, read ? 'read' : 'delivered');
+      this.#setStatus(message.idempotencyKey, read ? 'read' : 'delivered');
     }
   }
 
@@ -839,6 +891,7 @@ export class ChatController {
       this.#renderMessages(this.#activeRoomId);
     }
     this.#renderTyping();
+    this.#renderKeyWarnings();
   }
 
   #renderHeader(): void {
@@ -851,6 +904,14 @@ export class ChatController {
             selfId: this.#selfId,
           })
         : null,
+    );
+  }
+
+  #renderKeyWarnings(): void {
+    const roomId = this.#activeRoomId;
+    const changed = roomId === null ? [] : this.#keeper.changedMembers(roomId);
+    this.#deps.view.renderKeyWarnings?.(
+      changed.map((userId) => keyChangeNotice(displayName(userId, this.#selfId, this.#names))),
     );
   }
 
@@ -876,11 +937,17 @@ export class ChatController {
   }
 
   async #requireEpoch(room: RoomSummary): Promise<void> {
-    if (!(await this.#keeper.ensureEpoch(room.id, room.keyEpoch, room.memberIds))) {
+    if (!(await this.#ensureEpoch(room.id, room.keyEpoch, room.memberIds))) {
       throw new Error('Sender keys are not distributed yet');
     }
   }
 
+  /** The entry key of one of this user's own messages (see `messageKey`). */
+  #ownKey(idempotencyKey: string): string {
+    return messageKey(this.#selfId, idempotencyKey);
+  }
+
+  /** Message entries of a room, keyed by `messageKey(senderId, idempotencyKey)`. */
   #roomEntries(roomId: string): Map<string, MessageEntry> {
     let entries = this.#entries.get(roomId);
     if (!entries) {
@@ -931,7 +998,7 @@ export class ChatController {
       void this.#loadNames(room.id);
     }
     if (known?.keyEpoch !== keyEpoch) {
-      void this.#keeper.ensureEpoch(room.id, keyEpoch, room.memberIds);
+      void this.#ensureEpoch(room.id, keyEpoch, room.memberIds);
     }
   }
 }

@@ -1,77 +1,70 @@
-/* Chat page: CSS draws every state from attributes the page sets (data-state, data-status,
-   data-online, aria-current, aria-busy, hidden, :empty). JS never sets styles. */
+/* Chat page (`/chat`): an Operate surface on the indigo field. Tokens, the site header, buttons,
+   the focus ring and the view transitions come from styles.css; this file holds only the chat.
+   CSS draws every state from attributes the page sets (data-state, data-status, data-online,
+   aria-current, aria-busy, hidden, :empty). JS never sets styles. */
+
+body.chat-body {
+  display: block;
+  min-height: 100dvh;
+}
+
 .chat {
-  --accent: light-dark(#2457d6, #7aa2ff);
-  --accent-soft: light-dark(#e6edfc, #1d2a47);
-  --danger: light-dark(#b42318, #ff8a80);
-  --warning: light-dark(#8a5a00, #f5c46b);
-  --success: light-dark(#18794e, #5fd39b);
-  --muted: light-dark(#5b6170, #a3a9b7);
-  --border: light-dark(#c9ced8, #3a3f4b);
-  --surface: light-dark(#fff, #16181d);
-  --page: light-dark(#f4f6fa, #0f1115);
+  --sidebar-width: 20rem;
+  --column-max: 56rem;
+  --line: var(--color-field-line);
 
   display: grid;
   grid-template:
     'header header' auto
-    'sidebar room' 1fr
+    'sidebar room' minmax(0, 1fr)
     'notice notice' auto
-    / minmax(15rem, 20rem) 1fr;
-  block-size: 100dvh;
-  background: var(--page);
-}
-
-body.chat-body {
-  display: block;
-  min-block-size: 100dvh;
+    / var(--sidebar-width) minmax(0, 1fr);
+  height: 100dvh;
 }
 
 .chat [hidden] {
   display: none !important;
 }
 
-.chat h1,
-.chat h2 {
-  margin: 0;
+/* Icons are drawn as masks so they take the text color. */
+.chat {
+  --icon-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --icon-check-double: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 16'%3E%3Cpath d='M1.5 8.5l3 3 7-7M9 11.5l7-7' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --icon-clock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='none' stroke='black' stroke-width='1.6'/%3E%3Cpath d='M8 4.75V8l2.25 1.5' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  --icon-alert: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6.25' fill='none' stroke='black' stroke-width='1.6'/%3E%3Cpath d='M8 4.5v4.25' stroke='black' stroke-width='1.8' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='11.25' r='1' fill='black'/%3E%3C/svg%3E");
+  --icon-back: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M10 3.5L5.5 8l4.5 4.5' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --icon-forward: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 3.5L10.5 8 6 12.5' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --icon-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
-.visually-hidden {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
+/* Site header: brand, connection banner, account actions. */
 
-/* Header and connection banner */
 .chat-header {
   grid-area: header;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem 1rem;
   align-items: center;
-  padding: 0.75rem 1rem;
-  border-block-end: 1px solid var(--border);
-  background: var(--surface);
+  gap: var(--space-2) var(--space-4);
+  min-height: var(--header-height);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--line);
 }
 
-.chat-header h1 {
-  font-size: 1.125rem;
+.chat-header .header-nav {
+  margin-left: auto;
 }
 
-.chat-header h1 a {
-  color: inherit;
-  text-decoration: none;
-}
-
+/* The banner says only what is wrong; it is empty (and gone) while the socket is open. */
 .banner {
-  margin: 0;
-  padding: 0.25rem 0.75rem;
-  border-radius: 999px;
+  min-width: 0;
+  max-width: 60ch;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--color-field-deep);
+  color: var(--color-ink-muted);
   font-size: 0.875rem;
-  color: var(--muted);
-  background: var(--accent-soft);
+  line-height: 1.4;
 }
 
 .banner:empty {
@@ -80,33 +73,35 @@ body.chat-body {
 
 .banner[data-state='offline'],
 .banner[data-state='reconnecting'] {
-  color: var(--warning);
+  border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-field));
+  color: var(--color-warning);
 }
 
 .banner[data-state='unauthorized'] {
-  color: var(--danger);
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-field));
+  color: var(--color-danger);
 }
 
-.banner-action {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-/* Pushed to the end of the header; aria-busy while the server revokes the session. */
+/* Quiet secondary action; aria-busy while the server revokes the session. */
 .sign-out {
-  margin-inline-start: auto;
-  padding: 0.375rem 0.875rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  min-height: var(--target-min);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-ink);
   font: inherit;
   font-weight: 600;
-  color: inherit;
-  background: transparent;
   cursor: pointer;
+  transition: border-color 160ms var(--ease-out-expo);
 }
 
 .sign-out:hover {
-  border-color: var(--accent);
+  border-color: var(--color-ink-subtle);
+}
+
+.sign-out:focus-visible {
+  border-radius: var(--radius-pill);
 }
 
 .sign-out[aria-busy='true'] {
@@ -114,64 +109,94 @@ body.chat-body {
   opacity: 0.7;
 }
 
-/* Sidebar: rooms, new room, search */
-.sidebar {
-  grid-area: sidebar;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
-  overflow-y: auto;
-  border-inline-end: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.sidebar h2 {
-  font-size: 1rem;
-}
+/* Lists */
 
 .rooms,
 .members,
 .messages,
 .search-results {
-  margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* Sidebar: rooms, new room, search */
+
+.sidebar {
+  grid-area: sidebar;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-right: 1px solid var(--line);
+  background: var(--color-field-deep);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-inline: var(--space-2);
+}
+
+.sidebar h2 {
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
 .rooms {
   display: grid;
-  gap: 0.25rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
 }
 
 .rooms button {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  inline-size: 100%;
-  padding: 0.5rem 0.75rem;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-2) var(--space-3);
   border: 0;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-ink);
   font: inherit;
   text-align: start;
-  color: inherit;
-  background: transparent;
   cursor: pointer;
+  transition: background-color 160ms var(--ease-out-expo);
+}
+
+.rooms button > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rooms button:hover {
-  background: var(--accent-soft);
+  background: var(--color-field-raised);
 }
 
 .rooms button[aria-current='true'] {
+  background: var(--color-accent);
   font-weight: 600;
-  color: var(--accent);
-  background: var(--accent-soft);
 }
 
 .room-count {
-  font-size: 0.75rem;
-  color: var(--muted);
+  flex: none;
+  color: var(--color-ink-subtle);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rooms button[aria-current='true'] .room-count {
+  color: var(--color-ink-muted);
 }
 
 /* "No rooms yet" shows only while the list is empty. */
@@ -179,72 +204,127 @@ body.chat-body {
   display: none;
 }
 
-.panel {
-  padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+.rooms-empty {
+  padding-inline: var(--space-2);
 }
 
-.panel summary {
+.panel {
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--color-field);
+}
+
+.panel summary,
+.room-actions summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  border-radius: var(--radius-control);
   font-weight: 600;
+  list-style: none;
   cursor: pointer;
 }
 
+.panel summary::-webkit-details-marker,
+.room-actions summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel summary::after,
+.room-actions summary::after {
+  content: '';
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  mask: var(--icon-chevron) center / contain no-repeat;
+  transition: rotate 200ms var(--ease-out-expo);
+}
+
+.panel[open] summary::after,
+.room-actions[open] summary::after {
+  rotate: 180deg;
+}
+
+.panel summary {
+  margin: calc(-1 * var(--space-2)) 0;
+}
+
+/* Forms */
+
 .stack fieldset {
   display: grid;
-  gap: 0.75rem;
-  margin: 0.75rem 0 0;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: var(--space-3) 0 0;
   padding: 0;
   border: 0;
 }
 
 .stack .field {
   display: grid;
-  gap: 0.375rem;
+  gap: var(--space-2);
 }
 
 .stack label {
-  font-weight: 600;
   font-size: 0.875rem;
+  font-weight: 600;
 }
 
-.chat input,
+.chat input:not([type='checkbox']),
 .chat textarea {
-  padding: 0.5rem 0.625rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  width: 100%;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  border: 2px solid transparent;
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
   font: inherit;
-  color: inherit;
-  background: transparent;
+  caret-color: var(--color-accent);
 }
 
-.chat input:focus-visible,
-.chat textarea:focus-visible,
-.chat button:focus-visible,
-.chat summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+.chat input::placeholder,
+.chat textarea::placeholder {
+  color: var(--color-on-surface-muted);
+  opacity: 1;
+}
+
+.chat input::selection,
+.chat textarea::selection {
+  background: var(--color-accent);
+  color: var(--color-surface);
 }
 
 /* Native constraint validation, only after the user interacted with the field. */
 .chat input:user-invalid,
 .chat textarea:user-invalid {
-  border-color: var(--danger);
+  border-color: var(--color-danger);
+}
+
+.chat :disabled {
+  cursor: not-allowed;
+}
+
+.chat input:disabled {
+  opacity: 0.7;
 }
 
 .hint,
 .form-message,
 .notice {
-  margin: 0;
   font-size: 0.8125rem;
+  line-height: 1.45;
 }
 
 .hint {
-  color: var(--muted);
+  color: var(--color-ink-subtle);
 }
 
 .form-message {
-  color: var(--danger);
+  color: var(--color-danger);
 }
 
 .form-message:empty,
@@ -253,21 +333,8 @@ body.chat-body {
   display: none;
 }
 
-.chat button[type='submit'],
-.danger {
-  padding: 0.5rem 1rem;
-  border: 0;
-  border-radius: 0.5rem;
-  font: inherit;
-  font-weight: 600;
-  color: #fff;
-  background: var(--accent);
-  cursor: pointer;
-}
-
-.danger {
-  margin-block-start: 0.75rem;
-  background: var(--danger);
+.stack .button-pill {
+  justify-self: start;
 }
 
 /* A form whose request is in flight: its fieldset is disabled and the button says so. */
@@ -276,51 +343,94 @@ body.chat-body {
   opacity: 0.7;
 }
 
+.danger,
+.key-warnings button {
+  min-height: var(--target-min);
+  padding-inline: var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 55%, var(--color-field));
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-danger);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms var(--ease-out-expo);
+}
+
+.danger:hover,
+.key-warnings button:hover {
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+}
+
+.danger:focus-visible,
+.key-warnings button:focus-visible {
+  border-radius: var(--radius-pill);
+}
+
+/* Search (runs over the messages decrypted on this device) */
+
 .search-results {
   display: grid;
-  gap: 0.5rem;
-  margin-block-start: 0.75rem;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.search-results:empty {
+  display: none;
 }
 
 .search-results button {
   display: grid;
-  gap: 0.125rem;
-  inline-size: 100%;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  gap: var(--space-1);
+  width: 100%;
+  min-height: var(--target-min);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--color-field-deep);
+  color: var(--color-ink);
   font: inherit;
   text-align: start;
-  color: inherit;
-  background: transparent;
   cursor: pointer;
 }
 
+.search-results button:hover {
+  border-color: var(--color-ink-subtle);
+}
+
 .search-result-meta {
+  color: var(--color-ink-subtle);
   font-size: 0.75rem;
-  color: var(--muted);
 }
 
 .search-result-text {
   overflow-wrap: anywhere;
 }
 
+.search-empty {
+  margin-top: var(--space-3);
+}
+
 /* Room */
+
 .room,
 .room-placeholder {
   grid-area: room;
-  min-block-size: 0;
+  min-height: 0;
 }
 
 .room {
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
 }
 
 .room-placeholder {
   display: grid;
   place-items: center;
-  color: var(--muted);
+  padding: var(--space-6);
+  color: var(--color-ink-muted);
+  text-align: center;
+  text-wrap: balance;
 }
 
 /* The placeholder only shows while no room is open. */
@@ -329,109 +439,224 @@ body.chat-body {
 }
 
 .room-header {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1rem;
   align-items: center;
-  padding: 0.75rem 1rem;
-  border-block-end: 1px solid var(--border);
-  background: var(--surface);
+  gap: var(--space-2) var(--space-5);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.room-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 0;
 }
 
 .room-header h2 {
-  font-size: 1.125rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* The one place the green appears in the room: the state that keeps every message private. */
+.tag {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-field-deep);
+  color: var(--color-ok);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 .members {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
-  font-size: 0.8125rem;
-  color: var(--muted);
+  gap: var(--space-1) var(--space-4);
+  color: var(--color-ink-muted);
+  font-size: 0.875rem;
 }
 
 .members li {
   display: inline-flex;
-  gap: 0.375rem;
   align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
 }
 
 /* Presence dot: drawn from data-online. */
 .members li::before {
   content: '';
-  inline-size: 0.5rem;
-  block-size: 0.5rem;
-  border: 1px solid var(--muted);
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--color-ink-subtle);
   border-radius: 50%;
 }
 
 .members li[data-online='true']::before {
-  border-color: var(--success);
-  background: var(--success);
+  border-color: var(--color-ok);
+  background: var(--color-ok);
 }
 
 .room-actions {
-  margin-inline-start: auto;
+  margin-left: auto;
 }
+
+.room-actions summary {
+  padding-inline: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+}
+
+.room-actions summary:hover {
+  border-color: var(--color-ink-subtle);
+}
+
+.room-actions summary:focus-visible {
+  border-radius: var(--radius-pill);
+}
+
+/* Opens as a panel over the messages instead of pushing them down. */
+.room-actions-panel {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + var(--space-2));
+  right: var(--space-5);
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+  width: min(22rem, 100% - 2 * var(--space-5));
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--color-field-raised);
+  box-shadow: 0 24px 48px -24px rgb(4 2 30 / 0.8);
+}
+
+.room-actions-panel form {
+  width: 100%;
+}
+
+.room-actions-panel fieldset {
+  margin-top: 0;
+}
+
+/* A member's identity key changed (S5): the room is paused until the user trusts the new key. */
+.key-warnings {
+  display: grid;
+  flex-basis: 100%;
+  order: 1;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 55%, var(--color-field));
+  border-radius: var(--radius-control);
+  background: var(--color-field-deep);
+}
+
+.key-warnings ul {
+  padding-left: var(--space-5);
+}
+
+.key-warnings button {
+  justify-self: start;
+}
+
+/* Messages: one centred reading column, own messages on the right. */
 
 .messages-scroller {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
+  gap: var(--space-3);
+  padding: var(--space-5) max(var(--space-5), (100% - var(--column-max)) / 2);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 .load-older {
   align-self: center;
-  padding: 0.25rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font: inherit;
-  font-size: 0.8125rem;
-  color: var(--accent);
+  min-height: var(--target-min);
+  padding-inline: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
   background: transparent;
+  color: var(--color-ink-muted);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
   cursor: pointer;
+}
+
+.load-older:hover {
+  border-color: var(--color-ink-subtle);
+  color: var(--color-ink);
+}
+
+.load-older:focus-visible {
+  border-radius: var(--radius-pill);
 }
 
 .messages {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .messages:not(:empty) + .messages-empty {
   display: none;
 }
 
+.messages-empty {
+  margin-block: auto;
+  align-self: center;
+  color: var(--color-ink-muted);
+  font-size: 0.9375rem;
+}
+
 .message {
   display: grid;
-  gap: 0.125rem;
-  max-inline-size: min(36rem, 85%);
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  background: var(--surface);
+  gap: var(--space-1);
+  max-width: min(36rem, 82%);
+  padding: var(--space-2) var(--space-4) var(--space-2);
+  border: 1px solid transparent;
+  border-radius: 18px 18px 18px 4px;
+  background: var(--color-surface-soft);
+  color: var(--color-on-surface);
 }
 
 .message[data-own='true'] {
   align-self: flex-end;
-  border-color: transparent;
-  background: var(--accent-soft);
-}
-
-.message p {
-  margin: 0;
+  border-radius: 18px 18px 4px 18px;
+  background: var(--color-accent);
+  color: var(--color-surface);
 }
 
 .message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  color: var(--color-on-surface-muted);
   font-size: 0.75rem;
-  color: var(--muted);
+}
+
+.message[data-own='true'] .message-meta,
+.message[data-own='true'] .message-status {
+  color: color-mix(in srgb, var(--color-surface) 82%, var(--color-accent));
 }
 
 .message-sender {
   font-weight: 600;
+}
+
+.message-time {
+  font-variant-numeric: tabular-nums;
 }
 
 .message-text {
@@ -439,17 +664,40 @@ body.chat-body {
   overflow-wrap: anywhere;
 }
 
-.message[data-undecryptable='true'] .message-text {
-  font-style: italic;
-  color: var(--muted);
+/* No sender key for it on this device: the bubble says so instead of pretending. */
+.message[data-undecryptable='true'] {
+  border-color: var(--color-ink-subtle);
+  border-style: dashed;
+  background: transparent;
+  color: var(--color-ink-muted);
 }
 
-/* Own-message status: the label text comes from the page; CSS draws the tick from data-status.
-   The ticks are decorative (empty alt text after the slash), so the label is read only once. */
+.message[data-undecryptable='true'] .message-meta {
+  color: var(--color-ink-subtle);
+}
+
+.message[data-undecryptable='true'] .message-text {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.message[data-undecryptable='true'] .message-text::before {
+  content: '';
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  mask: var(--icon-alert) center / contain no-repeat;
+}
+
+/* Own-message status: the label text comes from the page; CSS draws the tick from data-status. */
 .message-status {
+  display: inline-flex;
+  align-items: center;
   justify-self: end;
+  gap: var(--space-1);
   font-size: 0.75rem;
-  color: var(--muted);
 }
 
 .message[data-own='false'] .message-status {
@@ -457,91 +705,349 @@ body.chat-body {
 }
 
 .message-status::before {
-  margin-inline-end: 0.25rem;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  mask: center / contain no-repeat;
 }
 
 .message[data-status='pending'] .message-status::before {
-  content: '◷';
-  content: '◷' / '';
+  content: '';
+  mask-image: var(--icon-clock);
 }
 
 .message[data-status='sent'] .message-status::before {
-  content: '✓';
-  content: '✓' / '';
+  content: '';
+  mask-image: var(--icon-check);
 }
 
-.message[data-status='delivered'] .message-status::before {
-  content: '✓✓';
-  content: '✓✓' / '';
-}
-
-.message[data-status='read'] .message-status {
-  color: var(--accent);
-}
-
+.message[data-status='delivered'] .message-status::before,
 .message[data-status='read'] .message-status::before {
-  content: '✓✓';
-  content: '✓✓' / '';
+  content: '';
+  width: 20px;
+  mask-image: var(--icon-check-double);
 }
 
-.message[data-failed='true'] .message-status {
-  color: var(--danger);
+.message[data-own='true'][data-status='read'] .message-status {
+  color: var(--color-surface);
+  font-weight: 600;
+}
+
+/* Still in the outbox: a darker bubble until the server acknowledges it. */
+.message[data-own='true'][data-status='pending'] {
+  background: color-mix(in srgb, var(--color-accent) 62%, var(--color-field));
+}
+
+.message[data-own='true'][data-failed='true'] {
+  border-color: color-mix(in srgb, var(--color-danger) 60%, var(--color-field));
+  background: transparent;
+  color: var(--color-ink);
+}
+
+.message[data-own='true'][data-failed='true'] .message-meta {
+  color: var(--color-ink-subtle);
+}
+
+.message[data-own='true'][data-failed='true'] .message-status {
+  color: var(--color-danger);
+  font-weight: 600;
 }
 
 .message[data-failed='true'] .message-status::before {
-  content: '!';
-  content: '!' / '';
-}
-
-.message[data-status='pending'] {
-  opacity: 0.75;
+  content: '';
+  width: 16px;
+  mask-image: var(--icon-alert);
 }
 
 .typing {
-  margin: 0;
-  padding: 0 1rem 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 max(var(--space-5), (100% - var(--column-max)) / 2) var(--space-2);
+  color: var(--color-ink-subtle);
   font-size: 0.8125rem;
-  font-style: italic;
-  color: var(--muted);
 }
+
+.typing::before {
+  content: '';
+  flex: none;
+  width: 22px;
+  height: 6px;
+  background: radial-gradient(circle, currentColor 2.5px, transparent 3px) 0 50% / 8px 6px repeat-x;
+}
+
+/* The one authored moment: the dots of someone typing breathe. */
+@media (prefers-reduced-motion: no-preference) {
+  .typing::before {
+    animation: typing 1.2s var(--ease-out-expo) infinite alternate;
+  }
+
+  @keyframes typing {
+    from {
+      opacity: 0.45;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* Composer: the room's primary action, always at the bottom. */
 
 .composer {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
-  padding: 0.75rem 1rem;
-  border-block-start: 1px solid var(--border);
-  background: var(--surface);
+  gap: var(--space-3);
+  padding: var(--space-3) max(var(--space-5), (100% - var(--column-max)) / 2) var(--space-4);
+  border-top: 1px solid var(--line);
 }
 
-.composer textarea {
-  resize: vertical;
-  min-block-size: 2.75rem;
-  max-block-size: 12rem;
+.chat .composer textarea {
+  min-height: 56px;
+  max-height: 12rem;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 20px;
+  resize: none;
+  field-sizing: content;
+}
+
+.composer-send {
+  min-width: 96px;
 }
 
 .notice {
   grid-area: notice;
-  padding: 0.5rem 1rem;
-  color: var(--danger);
-  background: var(--surface);
-  border-block-start: 1px solid var(--border);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--line);
+  background: var(--color-field-deep);
+  color: var(--color-danger);
 }
 
-@media (width < 48rem) {
+/* The rooms toggle exists only on narrow screens. */
+.rooms-toggle,
+.rooms-toggle-label {
+  display: none;
+}
+
+/* Tablet: a narrower sidebar, same two panes. */
+@media (width < 1100px) {
+  .chat {
+    --sidebar-width: 17rem;
+  }
+
+  .room-header,
+  .chat-header {
+    padding-inline: var(--space-4);
+  }
+}
+
+/* Narrow screens: one pane at a time. The rooms list while no room is open (or while the toggle
+   asks for it), the room otherwise; the composer stays at the bottom, under the thumb. */
+@media (width < 900px) {
   .chat {
     grid-template:
       'header' auto
-      'room' minmax(0, 1fr)
-      'sidebar' auto
+      'main' minmax(0, 1fr)
       'notice' auto
-      / 1fr;
+      / minmax(0, 100%);
+  }
+
+  .chat-header {
+    gap: var(--space-2) var(--space-3);
+    min-height: 64px;
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .banner {
+    flex-basis: 100%;
+    order: 3;
+    max-width: none;
+    padding-block: var(--space-1);
+  }
+
+  .sidebar,
+  .room,
+  .room-placeholder {
+    grid-area: main;
   }
 
   .sidebar {
-    max-block-size: 40dvh;
-    border-inline-end: 0;
-    border-block-start: 1px solid var(--border);
+    padding: var(--space-4);
+    border-right: 0;
+    background: var(--color-field);
+  }
+
+  .room-placeholder {
+    display: none;
+  }
+
+  .chat:has(.room:not([hidden])):not(:has(.rooms-toggle:checked)) .sidebar,
+  .chat:has(.rooms-toggle:checked) .room {
+    display: none;
+  }
+
+  .rooms-toggle {
+    display: block;
+  }
+
+  .rooms-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--target-min);
+    padding-inline: var(--space-2) var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    color: var(--color-ink);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .rooms-toggle-label::before {
+    content: '';
+    width: 16px;
+    height: 16px;
+    background: currentColor;
+    mask: var(--icon-back) center / contain no-repeat;
+  }
+
+  .rooms-back {
+    flex-direction: row-reverse;
+    padding-inline: var(--space-3) var(--space-2);
+  }
+
+  .rooms-back::before {
+    mask-image: var(--icon-forward);
+  }
+
+  /* "Back to the room" only while a room is open behind the list. */
+  .chat:not(:has(.room:not([hidden]))) .rooms-back {
+    display: none;
+  }
+
+  .chat:has(.rooms-toggle:focus-visible) .rooms-toggle-label {
+    outline: 3px solid var(--color-ok);
+    outline-offset: 2px;
+  }
+
+  .room-header {
+    display: grid;
+    grid-template:
+      'back actions' auto
+      'title title' auto
+      'members members' auto
+      'warnings warnings' auto
+      / minmax(0, 1fr) auto;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-2) var(--space-4) var(--space-3);
+  }
+
+  .rooms-open {
+    grid-area: back;
+    justify-self: start;
+  }
+
+  .room-title {
+    grid-area: title;
+  }
+
+  .room-actions {
+    grid-area: actions;
+  }
+
+  .members {
+    grid-area: members;
+  }
+
+  .key-warnings {
+    grid-area: warnings;
+  }
+
+  .room-title {
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+  }
+
+  .room-header h2 {
+    overflow: hidden;
+    font-size: 1.0625rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .room-actions {
+    margin-left: 0;
+  }
+
+  .room-actions summary {
+    padding-inline: var(--space-3);
+    font-size: 0.875rem;
+  }
+
+  /* One line of members that scrolls on its own instead of growing the header. */
+  .members {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    font-size: 0.8125rem;
+  }
+
+  .room-actions-panel {
+    right: var(--space-4);
+    width: calc(100% - 2 * var(--space-4));
+  }
+
+  .messages-scroller {
+    padding: var(--space-4);
+  }
+
+  .message {
+    max-width: 88%;
+  }
+
+  .typing {
+    padding-inline: var(--space-4);
+  }
+
+  .composer {
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3) max(var(--space-3), env(safe-area-inset-bottom));
+  }
+
+  .chat .composer textarea {
+    max-height: 8rem;
+  }
+
+  .composer-send {
+    min-width: 0;
+    min-height: 56px;
+    padding-inline: var(--space-5);
+    font-size: 1rem;
+  }
+
+  .notice {
+    padding-inline: var(--space-4);
+  }
+}
+
+/* Tablet portrait: the room name fits between the two header actions. */
+@media (600px <= width < 900px) {
+  .room-header {
+    grid-template:
+      'back title actions' auto
+      'members members members' auto
+      'warnings warnings warnings' auto
+      / auto minmax(0, 1fr) auto;
+  }
+}
+
+@media (width < 380px) {
+  .room-title .tag {
+    padding-inline: var(--space-2);
+    letter-spacing: 0.02em;
   }
 }

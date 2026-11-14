@@ -1,10 +1,18 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from '../../shared/domain/app.error.ts';
+import {
+  ConflictError,
+  NotFoundError,
+  TooManyRequestsError,
+  UnauthorizedError,
+  ValidationError,
+} from '../../shared/domain/app.error.ts';
+import { InMemoryRateLimiter } from '../../shared/rate-limit/rate-limit.in-memory.ts';
 import { PasswordHash, UserName } from '../domain/user.value-objects.ts';
 import { UserRepositoryImpl } from '../infrastructure/user.repository.impl.ts';
 import { JoseTokenIssuer, JoseTokenVerifier } from '../infrastructure/user.security.jose.ts';
 import {
+  FAKE_EXPIRES_AT,
   FakePasswordHasher,
   FakeTokenIssuer,
   InMemoryUserDatasource,
@@ -21,12 +29,17 @@ let hasher: FakePasswordHasher;
 let signUp: SignUpUseCase;
 let signIn: SignInUseCase;
 
+const GENEROUS = { capacity: 1000, refillPerSecond: 1000 };
+
 beforeEach(() => {
   datasource = new InMemoryUserDatasource();
   hasher = new FakePasswordHasher();
   const users = new UserRepositoryImpl(datasource);
   signUp = new SignUpUseCase(users, hasher, new FakeTokenIssuer());
-  signIn = new SignInUseCase(users, hasher, new FakeTokenIssuer());
+  signIn = new SignInUseCase(users, hasher, new FakeTokenIssuer(), {
+    limiter: new InMemoryRateLimiter(),
+    policy: GENEROUS,
+  });
 });
 
 describe('SignUpUseCase', () => {
@@ -60,7 +73,10 @@ describe('SignUpUseCase', () => {
   test('creates the user with a hashed password and returns {user, token}', async () => {
     const result = await signUp.execute({ name: 'alice', password: STRONG_PASSWORD });
 
-    expect(result).toEqual({ ok: true, value: { token: 'token-for-1', user: { id: 1, name: 'alice' } } });
+    expect(result).toEqual({
+      ok: true,
+      value: { expiresAt: FAKE_EXPIRES_AT, token: 'token-for-1', user: { id: 1, name: 'alice' } },
+    });
     expect(datasource.users[0]?.passwordHash).toBe(PasswordHash.restore(`hashed:${STRONG_PASSWORD}`));
   });
 
@@ -139,7 +155,7 @@ describe('SignInUseCase', () => {
   test('returns {user, token} for valid credentials', async () => {
     expect(await signIn.execute({ name: 'alice', password: STRONG_PASSWORD })).toEqual({
       ok: true,
-      value: { token: 'token-for-1', user: { id: 1, name: 'alice' } },
+      value: { expiresAt: FAKE_EXPIRES_AT, token: 'token-for-1', user: { id: 1, name: 'alice' } },
     });
   });
 
@@ -174,35 +190,93 @@ describe('SignInUseCase', () => {
   });
 });
 
-const SECRET = 'refresh-test-secret';
+describe('SignInUseCase per-account throttle', () => {
+  const TIGHT = { capacity: 2, refillPerSecond: 1 / 30 };
 
-function refreshUseCase(): RefreshUseCase {
+  function throttled(limiter = new InMemoryRateLimiter(() => 0)): SignInUseCase {
+    return new SignInUseCase(new UserRepositoryImpl(datasource), hasher, new FakeTokenIssuer(), {
+      limiter,
+      policy: TIGHT,
+    });
+  }
+
+  test.each([
+    ['a known name', 'alice'],
+    ['an unknown name', 'nobody'],
+  ])('spends signin:<name> before checking the password, for %s, and answers 429', async (_case, name) => {
+    await signUp.execute({ name: 'alice', password: STRONG_PASSWORD });
+    const useCase = throttled();
+    const input = { name, password: 'wrong-Password-1' };
+
+    await useCase.execute(input);
+    await useCase.execute(input);
+    const refused = await useCase.execute(input);
+
+    expect(refused.ok ? undefined : refused.error).toBeInstanceOf(TooManyRequestsError);
+    expect(refused.ok ? undefined : refused.error.statusCode).toBe(429);
+    expect(refused.ok || !(refused.error instanceof TooManyRequestsError) ? 0 : refused.error.retryAfterSeconds).toBe(
+      30,
+    );
+    // The third attempt never reached the hasher.
+    expect(hasher.verified).toHaveLength(2);
+  });
+
+  test('a throttled account refuses even the right password, while other names still sign in', async () => {
+    await signUp.execute({ name: 'alice', password: STRONG_PASSWORD });
+    await signUp.execute({ name: 'bob', password: STRONG_PASSWORD });
+    const useCase = throttled();
+    await useCase.execute({ name: 'alice', password: 'wrong-Password-1' });
+    await useCase.execute({ name: 'alice', password: 'wrong-Password-1' });
+
+    const alice = await useCase.execute({ name: 'alice', password: STRONG_PASSWORD });
+    const bob = await useCase.execute({ name: 'bob', password: STRONG_PASSWORD });
+
+    expect(alice.ok ? undefined : alice.error).toBeInstanceOf(TooManyRequestsError);
+    expect(bob.ok).toBe(true);
+  });
+});
+
+const SECRET = 'refresh-test-secret';
+const MAX_AGE_SECONDS = 604_800;
+
+function refreshUseCase(options: { now?: () => number; refreshed?: Array<[string, Date]> } = {}): RefreshUseCase {
   return new RefreshUseCase(
     new JoseTokenVerifier(SECRET),
     new UserRepositoryImpl(datasource),
     new JoseTokenIssuer(SECRET),
+    { now: options.now ?? Date.now, sessionMaxAgeSeconds: MAX_AGE_SECONDS },
+    (sessionId, expiresAt) => {
+      options.refreshed?.push([sessionId, expiresAt]);
+    },
   );
 }
 
-async function tokenFor(name: string, expiresIn = '1h'): Promise<string> {
+async function tokenFor(name: string, expiresIn = '1h', session?: { id: string; startedAt: Date }): Promise<string> {
   const user = await datasource.findByName(UserName.restore(name));
   if (!user) {
     throw new Error(`no user ${name}`);
   }
-  return new JoseTokenIssuer(SECRET, expiresIn).issue(user);
+  const { token } = await new JoseTokenIssuer(SECRET, expiresIn).issue(user, session);
+  return token;
 }
 
 describe('RefreshUseCase', () => {
-  test('issues a fresh token for the user of a valid token', async () => {
+  test('issues a fresh token for the user of a valid token and reports it for the session', async () => {
     await signUp.execute({ name: 'alice', password: STRONG_PASSWORD });
+    const refreshed: Array<[string, Date]> = [];
 
-    const result = await refreshUseCase().execute(await tokenFor('alice'));
+    const result = await refreshUseCase({ refreshed }).execute(
+      await tokenFor('alice', '1h', { id: 'session-1', startedAt: new Date() }),
+    );
 
     if (!result.ok) {
       throw result.error;
     }
     expect(result.value.user).toEqual({ id: 1, name: 'alice' });
-    expect(await new JoseTokenVerifier(SECRET).verify(result.value.token)).toMatchObject({ name: 'alice', userId: 1 });
+    const claims = await new JoseTokenVerifier(SECRET).verify(result.value.token);
+    expect(claims).toMatchObject({ name: 'alice', userId: 1 });
+    expect(result.value.expiresAt).toEqual(claims?.expiresAt ?? new Date(0));
+    expect(refreshed).toEqual([['session-1', result.value.expiresAt]]);
   });
 
   test.each([
@@ -212,32 +286,55 @@ describe('RefreshUseCase', () => {
       'a token signed with another secret',
       async (): Promise<string> => {
         const user = await datasource.findByName(UserName.restore('alice'));
-        return user ? new JoseTokenIssuer('other-secret').issue(user) : '';
+        if (!user) {
+          return '';
+        }
+        const { token } = await new JoseTokenIssuer('other-secret').issue(user);
+        return token;
       },
     ],
   ])('rejects %s with 401', async (_label, token) => {
     await signUp.execute({ name: 'alice', password: STRONG_PASSWORD });
+    const refreshed: Array<[string, Date]> = [];
 
-    const result = await refreshUseCase().execute(await token());
+    const result = await refreshUseCase({ refreshed }).execute(await token());
 
     expect(result.ok ? undefined : result.error).toBeInstanceOf(UnauthorizedError);
     expect(result.ok ? undefined : result.error.message).toBe('Invalid or expired token');
+    expect(refreshed).toEqual([]);
   });
 
-  test('keeps the session id of the token it refreshes', async () => {
+  test('keeps the session id and session start of the token it refreshes', async () => {
     await signUp.execute({ name: 'alice', password: STRONG_PASSWORD });
-    const user = await datasource.findByName(UserName.restore('alice'));
-    if (!user) {
-      throw new Error('no alice');
-    }
+    const startedAt = new Date(Math.floor(Date.now() / 1000) * 1000 - 3_600_000);
 
-    const result = await refreshUseCase().execute(await new JoseTokenIssuer(SECRET).issue(user, 'session-9'));
+    const result = await refreshUseCase().execute(await tokenFor('alice', '1h', { id: 'session-9', startedAt }));
 
     if (!result.ok) {
       throw result.error;
     }
     const claims = await new JoseTokenVerifier(SECRET).verify(result.value.token);
     expect(claims?.sessionId).toBe('session-9');
+    expect(claims?.sessionStartedAt).toEqual(startedAt);
+  });
+
+  test('answers 401 once now - sst > SESSION_MAX_AGE_SECONDS, and still refreshes at exactly the limit', async () => {
+    await signUp.execute({ name: 'alice', password: STRONG_PASSWORD });
+    const startedAt = new Date('2026-11-01T00:00:00.000Z');
+    const token = await tokenFor('alice', '1h', { id: 'old', startedAt });
+    const refreshed: Array<[string, Date]> = [];
+    const at =
+      (offsetSeconds: number): (() => number) =>
+      () =>
+        startedAt.getTime() + offsetSeconds * 1000;
+
+    const atLimit = await refreshUseCase({ now: at(MAX_AGE_SECONDS), refreshed }).execute(token);
+    const past = await refreshUseCase({ now: at(MAX_AGE_SECONDS + 1), refreshed }).execute(token);
+
+    expect(atLimit.ok).toBe(true);
+    expect(past.ok ? undefined : past.error).toBeInstanceOf(UnauthorizedError);
+    expect(past.ok ? undefined : past.error.message).toBe('Invalid or expired token');
+    expect(refreshed).toHaveLength(1);
   });
 
   test('rejects the token of a deleted user, and of a user whose name now belongs to someone else', async () => {

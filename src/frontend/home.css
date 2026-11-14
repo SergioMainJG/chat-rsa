@@ -1,0 +1,333 @@
+/* Home page (`/`). Spec: docs/design/home-page.md. Tokens, the header and the buttons live in the
+   shared styles.css; this file holds only the home's own sections. */
+
+/* Hero */
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+  align-items: center;
+  gap: var(--space-8);
+  min-height: min(calc(100svh - var(--header-height)), 760px);
+  padding-block: var(--space-8);
+}
+
+.hero-copy {
+  display: grid;
+  gap: var(--space-5);
+  justify-items: start;
+}
+
+h1 {
+  max-width: 17ch;
+  font-size: clamp(2.25rem, 1.5rem + 3vw, 4rem);
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.lead {
+  max-width: 46ch;
+  color: var(--color-ink-muted);
+  font-size: clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-5);
+  margin-top: var(--space-3);
+}
+
+.hero-signin {
+  color: var(--color-ink-muted);
+}
+
+.hero-signin a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.hero-cipher-note {
+  color: var(--color-ink-muted);
+  font-size: 0.875rem;
+}
+
+/* How a message travels */
+
+.journey {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
+  box-shadow: 0 24px 48px -24px rgb(4 2 30 / 0.7);
+}
+
+.journey-steps {
+  display: grid;
+  gap: var(--space-5);
+  padding: 0;
+  list-style: none;
+}
+
+.journey-step {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-6);
+}
+
+/* The thread that joins the three places. */
+.journey-step::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+.journey-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 22px;
+  bottom: calc(-1 * var(--space-5) + 6px);
+  left: 10px;
+  width: 2px;
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+.journey-place {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-on-surface-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.tag {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-field);
+  color: var(--color-ok);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.bubble {
+  justify-self: start;
+  max-width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 18px 18px 18px 4px;
+  background: var(--color-accent);
+  color: var(--color-surface);
+  font-size: 1.0625rem;
+  font-weight: 500;
+}
+
+.bubble-received {
+  border-radius: 18px 18px 4px 18px;
+  background: #ece9fb;
+  color: var(--color-on-surface);
+}
+
+.bubble-cipher {
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--color-field);
+  color: var(--color-ok);
+}
+
+.cipher-text {
+  display: block;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  letter-spacing: 0.02em;
+}
+
+.journey-note {
+  color: var(--color-on-surface-muted);
+  font-size: 0.875rem;
+}
+
+.journey figcaption {
+  padding-top: var(--space-4);
+  border-top: 1px solid #dddbea;
+  color: var(--color-on-surface-muted);
+  font-size: 0.9375rem;
+  text-wrap: pretty;
+}
+
+/* The one authored moment: the message is sealed as it reaches the server. */
+@media (prefers-reduced-motion: no-preference) {
+  .cipher-text {
+    animation: seal 1200ms var(--ease-out-expo) 400ms both;
+  }
+
+  @keyframes seal {
+    from {
+      clip-path: inset(0 100% 0 0);
+    }
+
+    to {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+}
+
+/* What the server sees */
+
+.visibility {
+  display: grid;
+  gap: var(--space-6);
+  padding-block: var(--space-9);
+  border-top: 1px solid var(--color-field-raised);
+  scroll-margin-top: var(--space-5);
+}
+
+.visibility h2 {
+  font-size: clamp(1.75rem, 1.25rem + 1.5vw, 2.5rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.visibility-lists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+}
+
+.visibility-group {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border-radius: var(--radius-panel);
+  background: var(--color-field-raised);
+}
+
+.visibility-group h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.visibility-group ul {
+  display: grid;
+  gap: var(--space-3);
+  padding-left: var(--space-5);
+  color: var(--color-ink-muted);
+}
+
+.visibility-group li::marker {
+  color: var(--color-ok);
+}
+
+/* Footer */
+
+.site-footer {
+  padding-block: var(--space-8);
+  background: var(--color-field-deep);
+}
+
+.site-footer-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+}
+
+.footer-brand {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+}
+
+.footer-brand p {
+  color: var(--color-ink-muted);
+}
+
+.footer-column h2 {
+  margin-bottom: var(--space-2);
+  color: var(--color-ink-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.footer-column ul {
+  padding: 0;
+  list-style: none;
+}
+
+.footer-column a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  font-size: 0.9375rem;
+  text-decoration: none;
+}
+
+.footer-column a:hover {
+  text-decoration: underline;
+}
+
+/* Smaller screens */
+
+@media (width < 900px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-7);
+    min-height: 0;
+    padding-block: var(--space-7);
+  }
+
+  .visibility {
+    padding-block: var(--space-8);
+  }
+
+  .visibility-lists {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .site-footer-inner {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .footer-brand {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (width < 600px) {
+  .hero {
+    padding-block: var(--space-6) var(--space-7);
+  }
+
+  .hero-actions {
+    width: 100%;
+  }
+
+  .button-primary {
+    width: 100%;
+  }
+
+  .journey,
+  .visibility-group {
+    padding: var(--space-5);
+  }
+}

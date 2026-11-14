@@ -16,7 +16,7 @@ import { PostgresMessageRepository } from '../../src/backend/messaging/infrastru
 import { PostgresRoomRepository } from '../../src/backend/messaging/infrastructure/messaging.rooms.postgresql.ts';
 import { UserId } from '../../src/backend/user/domain/user.value-objects.ts';
 import { newRunId } from '../load/k6-runner.ts';
-import { deleteRunData } from '../load/load.cleanup.ts';
+import { deleteRunData, runUserIds } from '../load/load.cleanup.ts';
 import { type IsolatedDatabase, isolatedDatabase } from '../support/messaging.database.test-support.ts';
 
 // BUG-CRITICAL-02 (load run 2): once load users touched messaging, `DELETE FROM users` failed on
@@ -203,6 +203,31 @@ describe('deleteRunData', () => {
       before,
     );
     expect(await membersOf(pair)).toEqual([user(2), a]);
+  });
+
+  // BUG-LOAD-RUN3-MED-02: runUserIds had no test; its ids decide which user buckets get refilled.
+  test('runUserIds lists exactly the ids of the run’s users', async () => {
+    const runId = newRunId();
+    const own = await usersOf(runId, ['p0', 'u1', 'm2']);
+    await usersOf(newRunId(), ['p0']);
+    const [loader] = await database.db<Array<{ id: number }>>`
+      INSERT INTO users (name, password) VALUES (${`load${runId}x0`}, 'x') RETURNING id
+    `;
+
+    const ids = await runUserIds(database.db, runId);
+
+    expect(ids.toSorted((a, b) => a - b)).toEqual(own.map(Number).toSorted((a, b) => a - b));
+    expect(ids).not.toContain(loader?.id);
+  });
+
+  test('runUserIds refuses a malformed runId', async () => {
+    let rejection: unknown = null;
+    try {
+      await runUserIds(database.db, '.*|x');
+    } catch (error) {
+      rejection = error;
+    }
+    expect(String(rejection)).toContain('Refusing to build a delete pattern');
   });
 
   test('a run that created nothing removes nothing', async () => {

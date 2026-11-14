@@ -22,10 +22,11 @@ function headersOf(call: Call | undefined): Headers {
   return new Headers(call?.init.headers);
 }
 
-function setup(
-  respond: (call: Call) => Promise<Response> | Response,
-  token: null | string = 'jwt',
-): { api: ChatApi; calls: Call[]; unauthorized: number[] } {
+function setup(respond: (call: Call) => Promise<Response> | Response): {
+  api: ChatApi;
+  calls: Call[];
+  unauthorized: number[];
+} {
   const calls: Call[] = [];
   const unauthorized: number[] = [];
   const fetch: FetchLike = async (url, init) => {
@@ -35,7 +36,6 @@ function setup(
   };
   const api = new ChatApi({
     fetch,
-    getToken: () => token,
     onUnauthorized: () => {
       unauthorized.push(1);
     },
@@ -44,7 +44,7 @@ function setup(
 }
 
 describe('ChatApi', () => {
-  test('sends the Bearer token, and JSON with its content type', async () => {
+  test('sends no Authorization header (the session cookie goes same-origin), and JSON with its content type', async () => {
     const { api, calls } = setup(() => Response.json(ROOM, { status: 201 }));
 
     await api.createRoom('general', [2]);
@@ -52,7 +52,8 @@ describe('ChatApi', () => {
     const [call] = calls;
     expect(call?.url).toBe('/api/rooms');
     expect(call?.init.method).toBe('POST');
-    expect(headersOf(call).get('authorization')).toBe('Bearer jwt');
+    expect(headersOf(call).has('authorization')).toBe(false);
+    expect(call?.init.credentials).toBe('same-origin');
     expect(headersOf(call).get('content-type')).toBe('application/json');
     expect(call?.init.body).toBe(JSON.stringify({ memberIds: [2], name: 'general' }));
   });
@@ -61,14 +62,6 @@ describe('ChatApi', () => {
     const { api, unauthorized } = setup(() => Response.json({ message: 'Unauthorized' }, { status: 401 }));
 
     expect(await api.listRooms()).toEqual({ kind: 'unauthorized' });
-    expect(unauthorized).toEqual([1]);
-  });
-
-  test('without a token nothing is fetched and the session is over', async () => {
-    const { api, calls, unauthorized } = setup(() => Response.json([]), null);
-
-    expect(await api.listRooms()).toEqual({ kind: 'unauthorized' });
-    expect(calls).toEqual([]);
     expect(unauthorized).toEqual([1]);
   });
 
@@ -232,7 +225,7 @@ describe('ChatApi', () => {
   });
 
   test('refresh returns the new session', async () => {
-    const session = { token: 'new', user: { id: 1, name: 'alice' } };
+    const session = { user: { id: 1, name: 'alice' } };
     const { api, calls } = setup(() => Response.json(session));
 
     expect(await api.refresh()).toEqual({ kind: 'ok', value: session });

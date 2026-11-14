@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="169" assertions="1745" failures="0" skipped="0" time="427.73887083">
+  <testsuite name="test/load/auth.load.sabotage.test.ts" file="test/load/auth.load.sabotage.test.ts" tests="11" assertions="32" failures="0" skipped="0" time="5.553818814" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:38.796Z">
+    <testsuite name="k6 auth suite against sabotaged servers" file="test/load/auth.load.sabotage.test.ts" line="32" tests="11" assertions="32" failures="0" skipped="0" time="5.466" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:38.796Z">
+      <testcase name="passes against the honest fake, which also receives unknown-user sign-ins (L-05)" classname="k6 auth suite against sabotaged servers" time="0.694755" file="test/load/auth.load.sabotage.test.ts" line="34" assertions="3" />
+      <testcase name="L-01: valid sign-ins answered with 401 count as failed requests" classname="k6 auth suite against sabotaged servers" time="0.4737" file="test/load/auth.load.sabotage.test.ts" line="46" assertions="2" />
+      <testcase name="L-02: a sign-in pool left by an aborted run is reused instead of crashing setup()" classname="k6 auth suite against sabotaged servers" time="0.481488" file="test/load/auth.load.sabotage.test.ts" line="57" assertions="3" />
+      <testcase name="L-03: rejects no-user-id (a response without user.id)" classname="k6 auth suite against sabotaged servers" time="0.45343" file="test/load/auth.load.sabotage.test.ts" line="76" assertions="3" />
+      <testcase name="L-03: rejects garbage-token (a token that is not a JWT)" classname="k6 auth suite against sabotaged servers" time="0.476391" file="test/load/auth.load.sabotage.test.ts" line="76" assertions="3" />
+      <testcase name="L-03: rejects text-content-type (a success body served as text/plain)" classname="k6 auth suite against sabotaged servers" time="0.474961" file="test/load/auth.load.sabotage.test.ts" line="76" assertions="3" />
+      <testcase name="L-03: rejects token-in-body (a JWT in the body as well as in the cookie (S4))" classname="k6 auth suite against sabotaged servers" time="0.525359" file="test/load/auth.load.sabotage.test.ts" line="76" assertions="3" />
+      <testcase name="L-03: rejects session-cookie-not-httponly (a session cookie that page scripts could read (S4))" classname="k6 auth suite against sabotaged servers" time="0.444204" file="test/load/auth.load.sabotage.test.ts" line="76" assertions="3" />
+      <testcase name="L-03: rejects hint-cookie-mismatch (a hint cookie that is not the token exp (S4))" classname="k6 auth suite against sabotaged servers" time="0.485672" file="test/load/auth.load.sabotage.test.ts" line="76" assertions="3" />
+      <testcase name="L-04: rejects error bodies stripped of error, message, path and timestamp" classname="k6 auth suite against sabotaged servers" time="0.492104" file="test/load/auth.load.sabotage.test.ts" line="92" assertions="4" />
+      <testcase name="L-05: an unknown name that signs in successfully is caught" classname="k6 auth suite against sabotaged servers" time="0.469887" file="test/load/auth.load.sabotage.test.ts" line="105" assertions="2" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="test/load/k6-runner.test.ts" file="test/load/k6-runner.test.ts" tests="19" assertions="24" failures="0" skipped="0" time="0.001240076" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:44.349Z">
+    <testsuite name="runUserPattern" file="test/load/k6-runner.test.ts" line="8" tests="18" assertions="23" failures="0" skipped="0" time="0" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:44.349Z">
+      <testcase name="refuses the malformed runId &quot;&quot; instead of widening the match" classname="runUserPattern" time="0.000169" file="test/load/k6-runner.test.ts" line="10" assertions="1" />
+      <testcase name="refuses the malformed runId &quot;0&quot; instead of widening the match" classname="runUserPattern" time="0.000015" file="test/load/k6-runner.test.ts" line="10" assertions="1" />
+      <testcase name="refuses the malformed runId &quot;abc&quot; instead of widening the match" classname="runUserPattern" time="0.000011" file="test/load/k6-runner.test.ts" line="10" assertions="1" />
+      <testcase name="refuses the malformed runId &quot;has space&quot; instead of widening the match" classname="runUserPattern" time="0.000006" file="test/load/k6-runner.test.ts" line="10" assertions="1" />
+      <testcase name="refuses the malformed runId &quot;UPPER123&quot; instead of widening the match" classname="runUserPattern" time="0.000022" file="test/load/k6-runner.test.ts" line="10" assertions="1" />
+      <testcase name="refuses the malformed runId &quot;mwdo1ixq%&quot; instead of widening the match" classname="runUserPattern" time="0.000006" file="test/load/k6-runner.test.ts" line="10" assertions="1" />
+      <testcase name="refuses the malformed runId &quot;mwdo1ixq&apos; OR 1=1&quot; instead of widening the match" classname="runUserPattern" time="0.000008" file="test/load/k6-runner.test.ts" line="10" assertions="1" />
+      <testcase name="matches exactly the pool, sign-up and messaging names of its own run" classname="runUserPattern" time="0.000088" file="test/load/k6-runner.test.ts" line="16" assertions="6" />
+      <testcase name="never matches &quot;loader&quot;" classname="runUserPattern" time="0.000024" file="test/load/k6-runner.test.ts" line="42" assertions="1" />
+      <testcase name="never matches &quot;loadbalancer&quot;" classname="runUserPattern" time="0.000004" file="test/load/k6-runner.test.ts" line="42" assertions="1" />
+      <testcase name="never matches &quot;load&quot;" classname="runUserPattern" time="0.000002" file="test/load/k6-runner.test.ts" line="42" assertions="1" />
+      <testcase name="never matches &quot;loadmwdo1ixq&quot;" classname="runUserPattern" time="0.000001" file="test/load/k6-runner.test.ts" line="42" assertions="1" />
+      <testcase name="never matches &quot;loadmwdo1ixqx1&quot;" classname="runUserPattern" time="0.000001" file="test/load/k6-runner.test.ts" line="42" assertions="1" />
+      <testcase name="never matches &quot;loadmwdo1ixqm&quot;" classname="runUserPattern" time="0.000001" file="test/load/k6-runner.test.ts" line="42" assertions="1" />
+      <testcase name="never matches &quot;loadmwdo1ixqp&quot;" classname="runUserPattern" time="0.000001" file="test/load/k6-runner.test.ts" line="42" assertions="1" />
+      <testcase name="never matches &quot;xloadmwdo1ixqp1&quot;" classname="runUserPattern" time="0.000001" file="test/load/k6-runner.test.ts" line="42" assertions="1" />
+      <testcase name="never matches &quot;loadmwdo1ixqp1x&quot;" classname="runUserPattern" time="0.000001" file="test/load/k6-runner.test.ts" line="42" assertions="1" />
+      <testcase name="never matches &quot;loadotherrunp1&quot;" classname="runUserPattern" time="0.000001" file="test/load/k6-runner.test.ts" line="42" assertions="1" />
+    </testsuite>
+    <testcase name="newRunId produces an id runUserPattern accepts" classname="" time="0.000092" file="test/load/k6-runner.test.ts" line="47" assertions="1" />
+  </testsuite>
+  <testsuite name="test/load/auth.load.jwt-claims.sabotage.test.ts" file="test/load/auth.load.jwt-claims.sabotage.test.ts" tests="14" assertions="37" failures="0" skipped="0" time="3.862942773" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:44.351Z">
+    <testsuite name="fake auth server tokens" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="43" tests="6" assertions="13" failures="0" skipped="0" time="0.011" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:44.351Z">
+      <testcase name="the honest token passes the real JoseTokenVerifier with the user id and name" classname="fake auth server tokens" time="0.002174" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="44" assertions="3" />
+      <testcase name="the broken-jwt-claims token is one the real verifier refuses" classname="fake auth server tokens" time="0.001712" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="57" assertions="2" />
+      <testcase name="the jwt-expired token is one the real verifier refuses" classname="fake auth server tokens" time="0.001411" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="57" assertions="2" />
+      <testcase name="the jwt-wrong-alg token is one the real verifier refuses" classname="fake auth server tokens" time="0.003659" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="57" assertions="2" />
+      <testcase name="the jwt-no-sid token is one the real verifier refuses" classname="fake auth server tokens" time="0.003102" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="57" assertions="2" />
+      <testcase name="the jwt-no-sst token is one the real verifier refuses" classname="fake auth server tokens" time="0.001831" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="57" assertions="2" />
+    </testsuite>
+    <testsuite name="k6 auth suite against tokens with broken claims" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="70" tests="8" assertions="24" failures="0" skipped="0" time="3.845" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:44.351Z">
+      <testcase name="rejects broken-jwt-claims (a signed HS256 token without exp)" classname="k6 auth suite against tokens with broken claims" time="0.486066" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="81" assertions="3" />
+      <testcase name="rejects jwt-expired (a token whose exp is in the past)" classname="k6 auth suite against tokens with broken claims" time="0.476308" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="81" assertions="3" />
+      <testcase name="rejects jwt-not-json (three base64url segments that are not JSON (&quot;undefined.undefined.undefined&quot;))" classname="k6 auth suite against tokens with broken claims" time="0.483467" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="81" assertions="3" />
+      <testcase name="rejects jwt-wrong-alg (a token signed with HS512)" classname="k6 auth suite against tokens with broken claims" time="0.467093" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="81" assertions="3" />
+      <testcase name="rejects jwt-wrong-name (a token whose name is another user)" classname="k6 auth suite against tokens with broken claims" time="0.480327" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="81" assertions="3" />
+      <testcase name="rejects jwt-wrong-subject (a token whose sub is another user)" classname="k6 auth suite against tokens with broken claims" time="0.467594" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="81" assertions="3" />
+      <testcase name="rejects jwt-no-sid (a token without the session id (sid))" classname="k6 auth suite against tokens with broken claims" time="0.48714" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="81" assertions="3" />
+      <testcase name="rejects jwt-no-sst (a token without the session start (sst))" classname="k6 auth suite against tokens with broken claims" time="0.499891" file="test/load/auth.load.jwt-claims.sabotage.test.ts" line="81" assertions="3" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="test/load/k6-runner.run-id.test.ts" file="test/load/k6-runner.run-id.test.ts" tests="17" assertions="1317" failures="0" skipped="0" time="0.019053009" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:48.214Z">
+    <testsuite name="runUserPattern rejects junk before a valid-looking runId" file="test/load/k6-runner.run-id.test.ts" line="8" tests="13" assertions="14" failures="0" skipped="0" time="0" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:48.214Z">
+      <testcase name="refuses &quot;%mwdo1ixq&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000077" file="test/load/k6-runner.run-id.test.ts" line="10" assertions="1" />
+      <testcase name="refuses &quot;.*|mwdo1ixq&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000013" file="test/load/k6-runner.run-id.test.ts" line="10" assertions="1" />
+      <testcase name="refuses &quot; mwdo1ixq&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000005" file="test/load/k6-runner.run-id.test.ts" line="10" assertions="1" />
+      <testcase name="refuses &quot;-mwdo1ixq&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000004" file="test/load/k6-runner.run-id.test.ts" line="10" assertions="1" />
+      <testcase name="refuses &quot;MWDO1IXQ&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000004" file="test/load/k6-runner.run-id.test.ts" line="10" assertions="1" />
+      <testcase name="refuses &quot;|mwdo1ixq&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000005" file="test/load/k6-runner.run-id.test.ts" line="10" assertions="1" />
+      <testcase name="refuses &quot;^mwdo1ixq&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000003" file="test/load/k6-runner.run-id.test.ts" line="10" assertions="1" />
+      <testcase name="refuses trailing junk &quot;mwdo1ixq%&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000033" file="test/load/k6-runner.run-id.test.ts" line="18" assertions="1" />
+      <testcase name="refuses trailing junk &quot;mwdo1ixq.*&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000006" file="test/load/k6-runner.run-id.test.ts" line="18" assertions="1" />
+      <testcase name="refuses trailing junk &quot;mwdo1ixq|&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000003" file="test/load/k6-runner.run-id.test.ts" line="18" assertions="1" />
+      <testcase name="refuses trailing junk &quot;mwdo1ixq\n&quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000003" file="test/load/k6-runner.run-id.test.ts" line="18" assertions="1" />
+      <testcase name="refuses trailing junk &quot;mwdo1ixq &quot;" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000003" file="test/load/k6-runner.run-id.test.ts" line="18" assertions="1" />
+      <testcase name="the alternation injection never reaches the delete pattern" classname="runUserPattern rejects junk before a valid-looking runId" time="0.000043" file="test/load/k6-runner.run-id.test.ts" line="24" assertions="2" />
+    </testsuite>
+    <testsuite name="newRunId" file="test/load/k6-runner.run-id.test.ts" line="31" tests="4" assertions="1303" failures="0" skipped="0" time="0.017" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:48.214Z">
+      <testcase name="ids created in the same millisecond are all different" classname="newRunId" time="0.007291" file="test/load/k6-runner.run-id.test.ts" line="32" assertions="1" />
+      <testcase name="every id is accepted by runUserPattern and starts with the time in base 36" classname="newRunId" time="0.001137" file="test/load/k6-runner.run-id.test.ts" line="37" assertions="300" />
+      <testcase name="appends exactly 8 random characters spread over all of base 36" classname="newRunId" time="0.009053" file="test/load/k6-runner.run-id.test.ts" line="52" assertions="1001" />
+      <testcase name="stays short enough for a user name (`load` + runId + kind + index, at most 64 characters)" classname="newRunId" time="0.000271" file="test/load/k6-runner.run-id.test.ts" line="61" assertions="1" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="test/load/messages.load.sabotage.test.ts" file="test/load/messages.load.sabotage.test.ts" tests="5" assertions="20" failures="0" skipped="0" time="61.752066784" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:48.233Z">
+    <testsuite name="k6 messages suite against the honest server" file="test/load/messages.load.sabotage.test.ts" line="13" tests="2" assertions="12" failures="0" skipped="0" time="17.892" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:48.233Z">
+      <testcase name="smoke passes, runs every check, and stores each idempotent message once" classname="k6 messages suite against the honest server" time="3.304829" file="test/load/messages.load.sabotage.test.ts" line="15" assertions="6" />
+      <testcase name="stress fits the default buckets, then bursts past the user bucket with well-formed 429s" classname="k6 messages suite against the honest server" time="14.588051" file="test/load/messages.load.sabotage.test.ts" line="35" assertions="6" />
+    </testsuite>
+    <testsuite name="k6 messages stress burst against sabotaged servers" file="test/load/messages.load.sabotage.test.ts" line="51" tests="3" assertions="8" failures="0" skipped="0" time="43.845" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:01:48.233Z">
+      <testcase name="catches no-rate-limit: a stress burst that never gets 429" classname="k6 messages stress burst against sabotaged servers" time="14.629326" file="test/load/messages.load.sabotage.test.ts" line="53" assertions="3" />
+      <testcase name="catches no-retry-after: a 429 without Retry-After" classname="k6 messages stress burst against sabotaged servers" time="14.583433" file="test/load/messages.load.sabotage.test.ts" line="65" assertions="2" />
+      <testcase name="catches burst-503: part of the burst answers 503 instead of 429" classname="k6 messages stress burst against sabotaged servers" time="14.633955" file="test/load/messages.load.sabotage.test.ts" line="76" assertions="3" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="test/load/auth.load.error-shape.sabotage.test.ts" file="test/load/auth.load.error-shape.sabotage.test.ts" tests="16" assertions="28" failures="0" skipped="0" time="3.84634496" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:02:49.985Z">
+    <testsuite name="status titles used by the k6 suite" file="test/load/auth.load.error-shape.sabotage.test.ts" line="46" tests="8" assertions="12" failures="0" skipped="0" time="0" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:02:49.985Z">
+      <testcase name="400 matches the server error format (Bad Request)" classname="status titles used by the k6 suite" time="0.000382" file="test/load/auth.load.error-shape.sabotage.test.ts" line="47" assertions="1" />
+      <testcase name="401 matches the server error format (Unauthorized)" classname="status titles used by the k6 suite" time="0.000048" file="test/load/auth.load.error-shape.sabotage.test.ts" line="47" assertions="1" />
+      <testcase name="403 matches the server error format (Forbidden)" classname="status titles used by the k6 suite" time="0.000033" file="test/load/auth.load.error-shape.sabotage.test.ts" line="47" assertions="1" />
+      <testcase name="409 matches the server error format (Conflict)" classname="status titles used by the k6 suite" time="0.000031" file="test/load/auth.load.error-shape.sabotage.test.ts" line="47" assertions="1" />
+      <testcase name="415 matches the server error format (Unsupported Media Type)" classname="status titles used by the k6 suite" time="0.000071" file="test/load/auth.load.error-shape.sabotage.test.ts" line="47" assertions="1" />
+      <testcase name="429 matches the server error format (Too Many Requests)" classname="status titles used by the k6 suite" time="0.000022" file="test/load/auth.load.error-shape.sabotage.test.ts" line="47" assertions="1" />
+      <testcase name="403 is &quot;Forbidden&quot;, the title auth.load.ts and the fake add for the origin checks" classname="status titles used by the k6 suite" time="0.000126" file="test/load/auth.load.error-shape.sabotage.test.ts" line="53" assertions="1" />
+      <testcase name="covers every status the auth suite expects as an error" classname="status titles used by the k6 suite" time="0.000065" file="test/load/auth.load.error-shape.sabotage.test.ts" line="59" assertions="5" />
+    </testsuite>
+    <testsuite name="k6 auth suite against error bodies broken in one field" file="test/load/auth.load.error-shape.sabotage.test.ts" line="66" tests="8" assertions="16" failures="0" skipped="0" time="3.84" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:02:49.985Z">
+      <testcase name="rejects error-generic-name (every error titled &quot;Error&quot;)" classname="k6 auth suite against error bodies broken in one field" time="0.558028" file="test/load/auth.load.error-shape.sabotage.test.ts" line="77" assertions="2" />
+      <testcase name="rejects error-no-message (no message)" classname="k6 auth suite against error bodies broken in one field" time="0.445441" file="test/load/auth.load.error-shape.sabotage.test.ts" line="77" assertions="2" />
+      <testcase name="rejects error-no-path (no path)" classname="k6 auth suite against error bodies broken in one field" time="0.492761" file="test/load/auth.load.error-shape.sabotage.test.ts" line="77" assertions="2" />
+      <testcase name="rejects error-no-timestamp (no timestamp)" classname="k6 auth suite against error bodies broken in one field" time="0.444645" file="test/load/auth.load.error-shape.sabotage.test.ts" line="77" assertions="2" />
+      <testcase name="rejects error-bad-timestamp (a timestamp that is not a date)" classname="k6 auth suite against error bodies broken in one field" time="0.484703" file="test/load/auth.load.error-shape.sabotage.test.ts" line="77" assertions="2" />
+      <testcase name="rejects error-non-iso-timestamp (a date that is not ISO 8601 (RFC 1123))" classname="k6 auth suite against error bodies broken in one field" time="0.475621" file="test/load/auth.load.error-shape.sabotage.test.ts" line="77" assertions="2" />
+      <testcase name="rejects error-no-field-errors (a 400 without errors)" classname="k6 auth suite against error bodies broken in one field" time="0.491919" file="test/load/auth.load.error-shape.sabotage.test.ts" line="77" assertions="2" />
+      <testcase name="rejects error-empty-field-errors (a 400 with errors: [])" classname="k6 auth suite against error bodies broken in one field" time="0.451137" file="test/load/auth.load.error-shape.sabotage.test.ts" line="77" assertions="2" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="test/load/auth.load.rate-limit.sabotage.test.ts" file="test/load/auth.load.rate-limit.sabotage.test.ts" tests="7" assertions="34" failures="0" skipped="0" time="122.885786607" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:02:53.832Z">
+    <testsuite name="fake auth server rate limiting" file="test/load/auth.load.rate-limit.sabotage.test.ts" line="42" tests="1" assertions="4" failures="0" skipped="0" time="0.011" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:02:53.832Z">
+      <testcase name="answers 429 with Retry-After and the error format past the default IP bucket" classname="fake auth server rate limiting" time="0.011454" file="test/load/auth.load.rate-limit.sabotage.test.ts" line="43" assertions="4" />
+    </testsuite>
+    <testsuite name="fake auth server per-account sign-in throttle (BUG-LOAD-RUN3-CRIT-01)" file="test/load/auth.load.rate-limit.sabotage.test.ts" line="73" tests="3" assertions="20" failures="0" skipped="0" time="0.009" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:02:53.832Z">
+      <testcase name="spends signin:&lt;name&gt; before the password check for a known name with the right password, then answers 429 until reset" classname="fake auth server per-account sign-in throttle (BUG-LOAD-RUN3-CRIT-01)" time="0.005616" file="test/load/auth.load.rate-limit.sabotage.test.ts" line="79" assertions="7" />
+      <testcase name="spends signin:&lt;name&gt; before the password check for a known name with a wrong password, then answers 429 until reset" classname="fake auth server per-account sign-in throttle (BUG-LOAD-RUN3-CRIT-01)" time="0.002364" file="test/load/auth.load.rate-limit.sabotage.test.ts" line="79" assertions="7" />
+      <testcase name="spends signin:&lt;name&gt; before the password check for an unknown name, then answers 429 until reset" classname="fake auth server per-account sign-in throttle (BUG-LOAD-RUN3-CRIT-01)" time="0.002004" file="test/load/auth.load.rate-limit.sabotage.test.ts" line="79" assertions="6" />
+    </testsuite>
+    <testsuite name="k6 stress profile against a rate-limited server" file="test/load/auth.load.rate-limit.sabotage.test.ts" line="120" tests="3" assertions="10" failures="0" skipped="0" time="122.862" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:02:53.832Z">
+      <testcase name="L-07: the burst is shed with well-formed 429s, and the saturated spike fails on purpose" classname="k6 stress profile against a rate-limited server" time="41.02759" file="test/load/auth.load.rate-limit.sabotage.test.ts" line="122" assertions="6" />
+      <testcase name="a server that never rate-limits fails the rate_limited threshold" classname="k6 stress profile against a rate-limited server" time="40.782273" file="test/load/auth.load.rate-limit.sabotage.test.ts" line="138" assertions="2" />
+      <testcase name="a 429 without Retry-After fails the rate-limit check" classname="k6 stress profile against a rate-limited server" time="41.053656" file="test/load/auth.load.rate-limit.sabotage.test.ts" line="149" assertions="2" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="test/load/auth.load.pool-reuse.sabotage.test.ts" file="test/load/auth.load.pool-reuse.sabotage.test.ts" tests="5" assertions="15" failures="0" skipped="0" time="3.468218641" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:04:56.717Z">
+    <testsuite name="sign-in pool left by an aborted run" file="test/load/auth.load.pool-reuse.sabotage.test.ts" line="23" tests="3" assertions="6" failures="0" skipped="0" time="1.542" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:04:56.717Z">
+      <testcase name="L-02: every leftover pool user is reused through a sign-in with the known password" classname="sign-in pool left by an aborted run" time="0.530426" file="test/load/auth.load.pool-reuse.sabotage.test.ts" line="25" assertions="2" />
+      <testcase name="a fresh server needs no reuse at all" classname="sign-in pool left by an aborted run" time="0.582521" file="test/load/auth.load.pool-reuse.sabotage.test.ts" line="36" assertions="2" />
+      <testcase name="a leftover pool user whose password changed stops setup() with a script exception" classname="sign-in pool left by an aborted run" time="0.430799" file="test/load/auth.load.pool-reuse.sabotage.test.ts" line="47" assertions="2" />
+    </testsuite>
+    <testsuite name="a run retried with the same RUN_ID" file="test/load/auth.load.pool-reuse.sabotage.test.ts" line="58" tests="1" assertions="4" failures="0" skipped="0" time="0.991" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:04:56.717Z">
+      <testcase name="passes again: the pool is reused and the sign-ups do not collide with the first attempt" classname="a run retried with the same RUN_ID" time="0.991071" file="test/load/auth.load.pool-reuse.sabotage.test.ts" line="60" assertions="4" />
+    </testsuite>
+    <testsuite name="a same-RUN_ID smoke rerun against the per-account sign-in bucket" file="test/load/auth.load.pool-reuse.sabotage.test.ts" line="87" tests="1" assertions="5" failures="0" skipped="0" time="0.932" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:04:56.717Z">
+      <testcase name="passes without a sign-in bucket reset in between: no pool name runs out of attempts" classname="a same-RUN_ID smoke rerun against the per-account sign-in bucket" time="0.932374" file="test/load/auth.load.pool-reuse.sabotage.test.ts" line="89" assertions="5" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="test/load/load.orchestrator.test.ts" file="test/load/load.orchestrator.test.ts" tests="24" assertions="49" failures="0" skipped="0" time="0.932178533" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:00.186Z">
+    <testsuite name="parseLoadArgs" file="test/load/load.orchestrator.test.ts" line="50" tests="7" assertions="7" failures="0" skipped="0" time="0" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:00.186Z">
+      <testcase name="defaults to the smoke profile and both suites" classname="parseLoadArgs" time="0.000111" file="test/load/load.orchestrator.test.ts" line="51" assertions="1" />
+      <testcase name="[ &quot;load&quot;, &quot;auth&quot; ]" classname="parseLoadArgs" time="0.000038" file="test/load/load.orchestrator.test.ts" line="59" assertions="1" />
+      <testcase name="[ &quot;stress&quot;, &quot;messages&quot; ]" classname="parseLoadArgs" time="0.000009" file="test/load/load.orchestrator.test.ts" line="59" assertions="1" />
+      <testcase name="[ &quot;smoke&quot;, &quot;all&quot; ]" classname="parseLoadArgs" time="0.000003" file="test/load/load.orchestrator.test.ts" line="59" assertions="1" />
+      <testcase name="rejects [ &quot;spike&quot; ]" classname="parseLoadArgs" time="0.00002" file="test/load/load.orchestrator.test.ts" line="63" assertions="1" />
+      <testcase name="rejects [ &quot;smoke&quot;, &quot;chat&quot; ]" classname="parseLoadArgs" time="0.000005" file="test/load/load.orchestrator.test.ts" line="63" assertions="1" />
+      <testcase name="rejects [ &quot;smoke&quot;, &quot;auth&quot;, &quot;extra&quot; ]" classname="parseLoadArgs" time="0.000003" file="test/load/load.orchestrator.test.ts" line="63" assertions="1" />
+    </testsuite>
+    <testsuite name="runLoad" file="test/load/load.orchestrator.test.ts" line="68" tests="11" assertions="28" failures="0" skipped="0" time="0.01" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:00.186Z">
+      <testcase name="a failed pre-flight runs no k6 and deletes nothing" classname="runLoad" time="0.00049" file="test/load/load.orchestrator.test.ts" line="69" assertions="2" />
+      <testcase name="runs each suite in order under one runId, resetting buckets around them, then cleans up" classname="runLoad" time="0.000469" file="test/load/load.orchestrator.test.ts" line="80" assertions="2" />
+      <testcase name="keeps the first failing k6 exit code (99) and still runs every suite and the cleanup" classname="runLoad" time="0.000178" file="test/load/load.orchestrator.test.ts" line="100" assertions="2" />
+      <testcase name="keeps a failing exit code of the second suite after a passing first one" classname="runLoad" time="0.000116" file="test/load/load.orchestrator.test.ts" line="113" assertions="1" />
+      <testcase name="every bucket reset is scoped to the run id, so its sign-in buckets are refilled" classname="runLoad" time="0.00011" file="test/load/load.orchestrator.test.ts" line="124" assertions="1" />
+      <testcase name="a cleanup that fails still refills the run users’ buckets" classname="runLoad" time="0.000151" file="test/load/load.orchestrator.test.ts" line="139" assertions="2" />
+      <testcase name="users that cannot be listed fail a passing run and still refill the shared buckets" classname="runLoad" time="0.000148" file="test/load/load.orchestrator.test.ts" line="154" assertions="3" />
+      <testcase name="a k6 that throws still gets its data cleaned up, and the run fails" classname="runLoad" time="0.000148" file="test/load/load.orchestrator.test.ts" line="170" assertions="4" />
+      <testcase name="a cleanup that fails turns a passing run into a failure and is reported" classname="runLoad" time="0.000123" file="test/load/load.orchestrator.test.ts" line="187" assertions="3" />
+      <testcase name="SIGINT stops the running container, skips the next suite, cleans up and exits 130" classname="runLoad" time="0.010281" file="test/load/load.orchestrator.test.ts" line="203" assertions="5" />
+      <testcase name="SIGTERM while the buckets are being reset starts no k6, cleans up and exits 143" classname="runLoad" time="0.000218" file="test/load/load.orchestrator.test.ts" line="239" assertions="3" />
+    </testsuite>
+    <testsuite name="pre-flight reachability" file="test/load/load.orchestrator.test.ts" line="262" tests="2" assertions="4" failures="0" skipped="0" time="0.204" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:00.186Z">
+      <testcase name="gives up on a server that accepts connections but never answers" classname="pre-flight reachability" time="0.200881" file="test/load/load.orchestrator.test.ts" line="263" assertions="2" />
+      <testcase name="accepts a server that answers 200 and refuses one that answers 500" classname="pre-flight reachability" time="0.004337" file="test/load/load.orchestrator.test.ts" line="274" assertions="2" />
+    </testsuite>
+    <testsuite name="withTimeout" file="test/load/load.orchestrator.test.ts" line="289" tests="2" assertions="5" failures="0" skipped="0" time="0.04" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:00.186Z">
+      <testcase name="true for a promise that settles in time, false for one that rejects or hangs" classname="withTimeout" time="0.021113" file="test/load/load.orchestrator.test.ts" line="290" assertions="3" />
+      <testcase name="cancels its timer once the promise settles, so the process can exit at once" classname="withTimeout" time="0.01946" file="test/load/load.orchestrator.test.ts" line="296" assertions="2" />
+    </testsuite>
+    <testsuite name="named k6 containers" file="test/load/load.orchestrator.test.ts" line="312" tests="2" assertions="5" failures="0" skipped="0" time="0.671" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:00.186Z">
+      <testcase name="containerName is unique per run and suite, and valid for podman" classname="named k6 containers" time="0.000206" file="test/load/load.orchestrator.test.ts" line="313" assertions="2" />
+      <testcase name="stopContainer stops a running k6 by name, and --rm leaves no container behind" classname="named k6 containers" time="0.671752" file="test/load/load.orchestrator.test.ts" line="318" assertions="3" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="test/load/auth.load.cookies.sabotage.test.ts" file="test/load/auth.load.cookies.sabotage.test.ts" tests="7" assertions="21" failures="0" skipped="0" time="3.339460086" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:01.118Z">
+    <testsuite name="k6 auth suite against session cookies broken in one attribute" file="test/load/auth.load.cookies.sabotage.test.ts" line="30" tests="7" assertions="21" failures="0" skipped="0" time="3.335" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:01.118Z">
+      <testcase name="rejects session-cookie-not-secure (a session cookie without Secure)" classname="k6 auth suite against session cookies broken in one attribute" time="0.45475" file="test/load/auth.load.cookies.sabotage.test.ts" line="40" assertions="3" />
+      <testcase name="rejects session-cookie-wrong-max-age (a session cookie that outlives the token)" classname="k6 auth suite against session cookies broken in one attribute" time="0.479791" file="test/load/auth.load.cookies.sabotage.test.ts" line="40" assertions="3" />
+      <testcase name="rejects hint-cookie-httponly (a hint cookie the route guard cannot read (HttpOnly))" classname="k6 auth suite against session cookies broken in one attribute" time="0.492305" file="test/load/auth.load.cookies.sabotage.test.ts" line="40" assertions="3" />
+      <testcase name="rejects hint-cookie-not-secure (a hint cookie without Secure)" classname="k6 auth suite against session cookies broken in one attribute" time="0.501621" file="test/load/auth.load.cookies.sabotage.test.ts" line="40" assertions="3" />
+      <testcase name="rejects hint-cookie-wrong-max-age (a hint cookie that outlives the token)" classname="k6 auth suite against session cookies broken in one attribute" time="0.479208" file="test/load/auth.load.cookies.sabotage.test.ts" line="40" assertions="3" />
+      <testcase name="rejects cookie-samesite-lax (cookies with SameSite=Lax instead of Strict)" classname="k6 auth suite against session cookies broken in one attribute" time="0.472422" file="test/load/auth.load.cookies.sabotage.test.ts" line="40" assertions="3" />
+      <testcase name="rejects cookie-path-not-root (cookies scoped to Path=/api instead of /)" classname="k6 auth suite against session cookies broken in one attribute" time="0.458617" file="test/load/auth.load.cookies.sabotage.test.ts" line="40" assertions="3" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="test/load/auth.load.sign-out.sabotage.test.ts" file="test/load/auth.load.sign-out.sabotage.test.ts" tests="8" assertions="23" failures="0" skipped="0" time="3.82432251" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:04.458Z">
+    <testsuite name="k6 auth suite: sign-out and the CSRF origin guard" file="test/load/auth.load.sign-out.sabotage.test.ts" line="38" tests="8" assertions="23" failures="0" skipped="0" time="3.819" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:04.458Z">
+      <testcase name="runs every sign-out and origin check, and passes against the honest fake" classname="k6 auth suite: sign-out and the CSRF origin guard" time="0.469688" file="test/load/auth.load.sign-out.sabotage.test.ts" line="40" assertions="9" />
+      <testcase name="rejects sign-out-keeps-cookies (a sign-out that leaves both cookies in place), failing exactly its check" classname="k6 auth suite: sign-out and the CSRF origin guard" time="0.474959" file="test/load/auth.load.sign-out.sabotage.test.ts" line="72" assertions="2" />
+      <testcase name="rejects refresh-ignores-revocation (a refresh that still accepts a signed-out token), failing exactly its check" classname="k6 auth suite: sign-out and the CSRF origin guard" time="0.458355" file="test/load/auth.load.sign-out.sabotage.test.ts" line="72" assertions="2" />
+      <testcase name="rejects rooms-ignores-revocation (a protected GET that still accepts a signed-out token), failing exactly its check" classname="k6 auth suite: sign-out and the CSRF origin guard" time="0.513466" file="test/load/auth.load.sign-out.sabotage.test.ts" line="72" assertions="2" />
+      <testcase name="rejects origin-untrusted-allowed (an unsafe request from a foreign Origin let through), failing exactly its check" classname="k6 auth suite: sign-out and the CSRF origin guard" time="0.492007" file="test/load/auth.load.sign-out.sabotage.test.ts" line="72" assertions="2" />
+      <testcase name="rejects origin-cookie-without-origin-allowed (a cookie-authenticated unsafe request without Origin let through), failing exactly its check" classname="k6 auth suite: sign-out and the CSRF origin guard" time="0.491775" file="test/load/auth.load.sign-out.sabotage.test.ts" line="72" assertions="2" />
+      <testcase name="rejects origin-bearer-without-origin-refused (a bearer client without Origin refused with 403)" classname="k6 auth suite: sign-out and the CSRF origin guard" time="0.471285" file="test/load/auth.load.sign-out.sabotage.test.ts" line="83" assertions="2" />
+      <testcase name="a token no endpoint accepts fails the live-session check" classname="k6 auth suite: sign-out and the CSRF origin guard" time="0.451824" file="test/load/auth.load.sign-out.sabotage.test.ts" line="95" assertions="2" />
+    </testsuite>
+  </testsuite>
+  <testsuite name="test/load/messages.load.checks.sabotage.test.ts" file="test/load/messages.load.checks.sabotage.test.ts" tests="36" assertions="145" failures="0" skipped="0" time="218.246471745" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:08.282Z">
+    <testsuite name="k6 messages suite catches live sockets defects" file="test/load/messages.load.checks.sabotage.test.ts" line="141" tests="11" assertions="44" failures="0" skipped="0" time="129.214" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:08.282Z">
+      <testcase name="catches duplicate-fan-out (an idempotent retry is stored and fanned out again)" classname="k6 messages suite catches live sockets defects" time="3.266267" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches no-ack (the gateway never acks a send)" classname="k6 messages suite catches live sockets defects" time="39.04638" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches no-fan-out (message.new never reaches the other member)" classname="k6 messages suite catches live sockets defects" time="33.450786" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches no-upgrade (every /ws upgrade is refused)" classname="k6 messages suite catches live sockets defects" time="0.548094" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches ready-without-rooms (ready lists no rooms)" classname="k6 messages suite catches live sockets defects" time="3.270839" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches no-receipt-push (receipt frames are never pushed)" classname="k6 messages suite catches live sockets defects" time="9.249265" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches no-rotation-push (room.rotated is never pushed)" classname="k6 messages suite catches live sockets defects" time="9.290863" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches stale-epoch-wrong-code (a stale-epoch send is refused as internal, not conflict)" classname="k6 messages suite catches live sockets defects" time="3.316708" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches no-refresh-push (an HTTP refresh does not push auth.refreshed)" classname="k6 messages suite catches live sockets defects" time="9.251936" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches refresh-frame-ignored (the gateway ignores auth.refresh frames)" classname="k6 messages suite catches live sockets defects" time="9.279504" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches sign-out-keeps-sockets (sign-out leaves the session sockets open)" classname="k6 messages suite catches live sockets defects" time="9.249222" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+    </testsuite>
+    <testsuite name="k6 messages suite catches history defects" file="test/load/messages.load.checks.sabotage.test.ts" line="141" tests="5" assertions="20" failures="0" skipped="0" time="16.563" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:08.282Z">
+      <testcase name="catches history-ascending (each page comes oldest first)" classname="k6 messages suite catches history defects" time="3.33195" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches history-overlap (nextBefore is an inclusive cursor, so pages overlap)" classname="k6 messages suite catches history defects" time="3.312998" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches history-oversized (pages hold twice the limit)" classname="k6 messages suite catches history defects" time="3.35111" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches non-member-history (a non-member reads the history)" classname="k6 messages suite catches history defects" time="3.299249" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches non-member-history-500 (refusing a non-member crashes with 500)" classname="k6 messages suite catches history defects" time="3.270867" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+    </testsuite>
+    <testsuite name="k6 messages suite catches REST bodies defects" file="test/load/messages.load.checks.sabotage.test.ts" line="141" tests="13" assertions="52" failures="0" skipped="0" time="43.275" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:08.282Z">
+      <testcase name="catches room-created-alone (a new room is reported without the other member)" classname="k6 messages suite catches REST bodies defects" time="3.267999" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches rooms-list-empty (the rooms list is empty)" classname="k6 messages suite catches REST bodies defects" time="3.273919" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches lookup-wrong-user (the lookup answers another id)" classname="k6 messages suite catches REST bodies defects" time="3.37137" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches keys-missing-member (a member key is missing)" classname="k6 messages suite catches REST bodies defects" time="3.328528" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches join-wrong-members (the join answer misses the new member)" classname="k6 messages suite catches REST bodies defects" time="3.367903" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches leave-stale-epoch (the leave answer keeps the old epoch)" classname="k6 messages suite catches REST bodies defects" time="3.355935" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches sender-keys-500 (the sender-keys upload answers 500)" classname="k6 messages suite catches REST bodies defects" time="3.321358" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches sender-keys-not-stored (the upload stores nothing)" classname="k6 messages suite catches REST bodies defects" time="3.331111" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches sender-keys-lost (the recipient finds no envelope)" classname="k6 messages suite catches REST bodies defects" time="3.338303" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches receipts-unordered (receipts are not ordered by user id)" classname="k6 messages suite catches REST bodies defects" time="3.342254" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches receipts-stale (receipts never advance)" classname="k6 messages suite catches REST bodies defects" time="3.363236" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches members-without-names (members are listed without names)" classname="k6 messages suite catches REST bodies defects" time="3.313117" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches members-open (a non-member lists the members)" classname="k6 messages suite catches REST bodies defects" time="3.306041" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+    </testsuite>
+    <testsuite name="k6 messages suite catches refresh and the session cookie defects" file="test/load/messages.load.checks.sabotage.test.ts" line="141" tests="6" assertions="24" failures="0" skipped="0" time="25.859" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:08.282Z">
+      <testcase name="catches refresh-token-in-body (refresh also returns the token in the body)" classname="k6 messages suite catches refresh and the session cookie defects" time="3.362692" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches refresh-new-session (refresh starts a new session instead of keeping it)" classname="k6 messages suite catches refresh and the session cookie defects" time="9.224914" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches refresh-cookie-readable (the refreshed session cookie is not HttpOnly)" classname="k6 messages suite catches refresh and the session cookie defects" time="3.306122" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches refresh-cookie-lax (the refreshed session cookie is SameSite=Lax)" classname="k6 messages suite catches refresh and the session cookie defects" time="3.332107" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches refresh-hint-stale (the hint cookie lags the new exp)" classname="k6 messages suite catches refresh and the session cookie defects" time="3.320124" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+      <testcase name="catches cookie-auth-ignored (the guard ignores the session cookie)" classname="k6 messages suite catches refresh and the session cookie defects" time="3.315982" file="test/load/messages.load.checks.sabotage.test.ts" line="143" assertions="4" />
+    </testsuite>
+    <testsuite name="k6 messages suite survives a malformed error body" file="test/load/messages.load.checks.sabotage.test.ts" line="156" tests="1" assertions="5" failures="0" skipped="0" time="3.315" hostname="ElEsposoDeLaPoderosaYunara" timestamp="2026-11-14T07:05:08.282Z">
+      <testcase name="catches bad-timestamp, and the rest of the iteration still runs" classname="k6 messages suite survives a malformed error body" time="3.315284" file="test/load/messages.load.checks.sabotage.test.ts" line="158" assertions="5" />
+    </testsuite>
+  </testsuite>
+</testsuites>

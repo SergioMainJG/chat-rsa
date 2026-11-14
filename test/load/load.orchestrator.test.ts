@@ -10,6 +10,7 @@ import {
   reachable,
   runLoad,
   stopContainer,
+  withTimeout,
 } from './load.orchestrator.ts';
 import { startFakeAuthServer } from './support/fake-auth-server.ts';
 import { runK6Against } from './support/k6-probe.test-support.ts';
@@ -31,7 +32,7 @@ function dependencies(calls: Calls, overrides: Partial<LoadDependencies> = {}): 
       calls.push('signals off');
     },
     preflight: async () => null,
-    resetRateLimits: async (userIds) => {
+    resetRateLimits: async (_runId, userIds) => {
       calls.push(`reset ${userIds.join(',')}`);
     },
     runK6: async (run: K6Run) => {
@@ -108,6 +109,64 @@ describe('runLoad', () => {
     expect(calls.filter((call) => call.startsWith('cleanup'))).toEqual(['cleanup testrun0001']);
   });
 
+  // BUG-LOAD-RUN3-MED-01: only a failure of the first suite was tested.
+  test('keeps a failing exit code of the second suite after a passing first one', async () => {
+    const calls: Calls = [];
+    const exits = [0, 99];
+    const code = await runLoad(
+      { baseUrl: 'http://x', profile: 'smoke', scripts: ['auth.load.ts', 'messages.load.ts'] },
+      dependencies(calls, { runK6: async () => exits.shift() ?? 0 }),
+    );
+
+    expect(code).toBe(99);
+  });
+
+  test('every bucket reset is scoped to the run id, so its sign-in buckets are refilled', async () => {
+    const runIds: string[] = [];
+    await runLoad(
+      { baseUrl: 'http://x', profile: 'smoke', scripts: ['auth.load.ts', 'messages.load.ts'] },
+      dependencies([], {
+        resetRateLimits: async (runId) => {
+          runIds.push(runId);
+        },
+      }),
+    );
+
+    expect(runIds).toEqual(['testrun0001', 'testrun0001', 'testrun0001']);
+  });
+
+  // BUG-LOAD-RUN3-MED-01: a cleanup that threw skipped the bucket reset entirely.
+  test('a cleanup that fails still refills the run users’ buckets', async () => {
+    const calls: Calls = [];
+    const code = await runLoad(
+      { baseUrl: 'http://x', profile: 'smoke', scripts: ['auth.load.ts'] },
+      dependencies(calls, {
+        cleanup: async () => {
+          throw new Error('room 1 has 1 members; minimum is 2');
+        },
+      }),
+    );
+
+    expect(code).toBe(1);
+    expect(calls).toContain('reset 7,8');
+  });
+
+  test('users that cannot be listed fail a passing run and still refill the shared buckets', async () => {
+    const calls: Calls = [];
+    const code = await runLoad(
+      { baseUrl: 'http://x', profile: 'smoke', scripts: ['auth.load.ts'] },
+      dependencies(calls, {
+        runUserIds: async () => {
+          throw new Error('connection refused');
+        },
+      }),
+    );
+
+    expect(code).toBe(1);
+    expect(calls).toContain('error Cleanup failed: connection refused');
+    expect(calls.filter((call) => call === 'reset ')).toHaveLength(2);
+  });
+
   test('a k6 that throws still gets its data cleaned up, and the run fails', async () => {
     const calls: Calls = [];
     const code = await runLoad(
@@ -169,6 +228,12 @@ describe('runLoad', () => {
     expect(calls).toContain('stop k6-testrun0001-auth');
     expect(calls).not.toContain('k6 messages.load.ts');
     expect(calls).toContain('cleanup testrun0001');
+    // BUG-LOAD-RUN3-MED-01: no bucket reset for a suite that will not run.
+    expect(calls.slice(0, calls.indexOf('cleanup testrun0001'))).toEqual([
+      'reset ',
+      'k6 auth.load.ts',
+      'stop k6-testrun0001-auth',
+    ]);
   });
 
   test('SIGTERM while the buckets are being reset starts no k6, cleans up and exits 143', async () => {
@@ -181,7 +246,7 @@ describe('runLoad', () => {
           signals.fire = handler;
           return () => calls.push('signals off');
         },
-        resetRateLimits: async (userIds) => {
+        resetRateLimits: async (_runId, userIds) => {
           calls.push(`reset ${userIds.join(',')}`);
           signals.fire?.('SIGTERM');
         },
@@ -217,6 +282,31 @@ describe('pre-flight reachability', () => {
       await broken.stop(true);
     }
   });
+});
+
+// BUG-LOAD-RUN3-MED-01: the pre-flight timeout was a `Bun.sleep` nobody cancelled, so every check
+// kept the process alive for the full timeout after it had answered.
+describe('withTimeout', () => {
+  test('true for a promise that settles in time, false for one that rejects or hangs', async () => {
+    expect(await withTimeout(Promise.resolve('ok'), 1000)).toBe(true);
+    expect(await withTimeout(Promise.reject(new Error('down')), 1000)).toBe(false);
+    expect(await withTimeout(Promise.withResolvers<never>().promise, 20)).toBe(false);
+  });
+
+  test('cancels its timer once the promise settles, so the process can exit at once', async () => {
+    const module = new URL('load.orchestrator.ts', import.meta.url).pathname;
+    const started = performance.now();
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        '-e',
+        `const { withTimeout } = await import(${JSON.stringify(module)}); await withTimeout(Promise.resolve(), 10_000);`,
+      ],
+      { stderr: 'pipe' },
+    );
+    expect(await child.exited).toBe(0);
+    expect(performance.now() - started).toBeLessThan(5000);
+  }, 15_000);
 });
 
 describe('named k6 containers', () => {

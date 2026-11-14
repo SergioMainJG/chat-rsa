@@ -69,13 +69,19 @@ describe('k6 auth suite against sabotaged servers', () => {
     ['no-user-id', 'a response without user.id'],
     ['garbage-token', 'a token that is not a JWT'],
     ['text-content-type', 'a success body served as text/plain'],
+    ['token-in-body', 'a JWT in the body as well as in the cookie (S4)'],
+    ['session-cookie-not-httponly', 'a session cookie that page scripts could read (S4)'],
+    ['hint-cookie-mismatch', 'a hint cookie that is not the token exp (S4)'],
   ] as const)(
     'L-03: rejects %s (%s)',
     async (sabotage) => {
       const outcome = await runAgainst(sabotage);
 
       expect(outcome.exitCode).toBe(THRESHOLD_FAILED);
-      for (const name of ['sign-in returns {user, token}', 'sign-up returns {user, token}']) {
+      for (const name of [
+        'sign-in returns {user} and the session cookies',
+        'sign-up returns {user} and the session cookies',
+      ]) {
         expect(failedChecks(outcome)).toContain(name);
       }
     },

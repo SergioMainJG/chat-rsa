@@ -13,6 +13,14 @@ describe('runUserPattern rejects junk before a valid-looking runId', () => {
     },
   );
 
+  // BUG-LOAD-RUN3-MED-02: dropping the `$` anchor would accept a valid runId followed by junk.
+  test.each(['mwdo1ixq%', 'mwdo1ixq.*', 'mwdo1ixq|', 'mwdo1ixq\n', 'mwdo1ixq '])(
+    'refuses trailing junk %p',
+    (runId) => {
+      expect(() => runUserPattern(runId)).toThrow('Refusing to build a delete pattern');
+    },
+  );
+
   test('the alternation injection never reaches the delete pattern', () => {
     // Unanchored, `.*|mwdo1ixq` would build `^load.*|mwdo1ixq[pum][0-9]+$`, which matches `loader`.
     expect(() => runUserPattern('.*|mwdo1ixq')).toThrow();
@@ -36,6 +44,18 @@ describe('newRunId', () => {
       expect(time).toBeGreaterThanOrEqual(before);
       expect(time).toBeLessThanOrEqual(after);
     }
+  });
+
+  // BUG-LOAD-RUN3-MED-02: `byte * 36` instead of `byte % 36` still produced unique, valid ids, but
+  // longer ones that always ended their characters in `0`. The random tail is exactly 8 characters
+  // and draws on the whole base-36 alphabet.
+  test('appends exactly 8 random characters spread over all of base 36', () => {
+    const timeLength = Date.now().toString(36).length;
+    const tails = Array.from({ length: 1000 }, () => newRunId()).map((id) => id.slice(timeLength));
+    for (const tail of tails) {
+      expect(tail).toMatch(/^[0-9a-z]{8}$/u);
+    }
+    expect(new Set(tails.join('')).size).toBe(36);
   });
 
   test('stays short enough for a user name (`load` + runId + kind + index, at most 64 characters)', () => {

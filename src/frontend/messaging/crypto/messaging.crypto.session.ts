@@ -124,6 +124,50 @@ export class SenderKeySession {
     });
   }
 
+  /** Re-pins the given identity keys of the other members: the user trusted them (S5). */
+  async trustIdentityKeys({
+    members,
+    selfId,
+  }: {
+    readonly members: readonly EpochMember[];
+    readonly selfId: number;
+  }): Promise<void> {
+    await Promise.all(
+      members
+        .filter(({ userId }) => userId !== selfId)
+        .map(async ({ publicKeyBase64, userId }) =>
+          this.store.savePinnedKey(userId, publicKeyBase64),
+        ),
+    );
+  }
+
+  /**
+   * Trust on first use (S5): pins the identity key of every other member seen for the first time
+   * and returns the ids of members whose key differs from their pin. A changed pin is left as it
+   * was; only `trustIdentityKeys` replaces it. The own key is never pinned nor compared.
+   */
+  async verifyIdentityKeys({
+    members,
+    selfId,
+  }: {
+    readonly members: readonly EpochMember[];
+    readonly selfId: number;
+  }): Promise<number[]> {
+    const outcomes = await Promise.all(
+      members
+        .filter(({ userId }) => userId !== selfId)
+        .map(async ({ publicKeyBase64, userId }) => {
+          const pinned = await this.store.getPinnedKey(userId);
+          if (pinned === null) {
+            await this.store.savePinnedKey(userId, publicKeyBase64);
+            return null;
+          }
+          return pinned === publicKeyBase64 ? null : userId;
+        }),
+    );
+    return outcomes.filter((userId) => userId !== null);
+  }
+
   /**
    * Creates this user's chain key for the epoch when there is none yet, and returns it wrapped for
    * every member. `members` must include self, so other tabs and reloads can unwrap it. Returns []

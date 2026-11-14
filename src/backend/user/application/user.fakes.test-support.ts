@@ -1,7 +1,12 @@
 import { ConflictError } from '../../shared/domain/app.error.ts';
 import { UserDatasource } from '../domain/user.datasource.ts';
 import { type NewUser, User } from '../domain/user.entity.ts';
-import { PasswordHasher, SessionRevocations, TokenIssuer } from '../domain/user.security.ts';
+import {
+  type IssuedToken,
+  PasswordHasher,
+  SessionRevocations,
+  TokenIssuer,
+} from '../domain/user.security.ts';
 import {
   type Password,
   PasswordHash,
@@ -48,9 +53,11 @@ export class FakePasswordHasher extends PasswordHasher {
   }
 }
 
+export const FAKE_EXPIRES_AT = new Date('2030-01-01T00:00:00.000Z');
+
 export class FakeTokenIssuer extends TokenIssuer {
-  override async issue(user: User): Promise<string> {
-    return `token-for-${user.id}`;
+  override async issue(user: User): Promise<IssuedToken> {
+    return { expiresAt: FAKE_EXPIRES_AT, token: `token-for-${user.id}` };
   }
 }
 

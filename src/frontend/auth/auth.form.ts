@@ -1,6 +1,6 @@
 // Browser entry of the auth pages: the only JS on them. Native validation runs first (the submit
 // event fires only for a valid form); the API accepts JSON only, so the form is sent with fetch.
-import { enforceAccess, revealPage, TOKEN_KEY } from './auth.page-guard.ts';
+import { enforceAccess, revealPage } from './auth.page-guard.ts';
 import { credentialsFrom, GENERIC_ERROR, outcomeOf } from './presentation/auth.view.ts';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -81,7 +81,7 @@ async function submit(form: HTMLFormElement): Promise<void> {
     });
     const outcome = await outcomeOf(response);
     if (outcome.kind === 'success') {
-      sessionStorage.setItem(TOKEN_KEY, outcome.session.token);
+      // The server set the HttpOnly session cookie and its hint; nothing is stored here.
       location.assign(outcome.redirectTo);
       return;
     }

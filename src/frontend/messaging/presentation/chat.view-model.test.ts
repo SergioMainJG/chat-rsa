@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   displayName,
+  keyChangeNotice,
   type MessageEntry,
   parseMemberNames,
   toMessageItems,
@@ -48,7 +49,21 @@ describe('toMessageItems', () => {
       (item) => item.key,
     );
 
-    expect(keys).toEqual(['a', 'b', 'q1', 'q2']);
+    expect(keys).toEqual(['1:a', '2:b', '1:q1', '1:q2']);
+  });
+
+  // bugs/security.bug.xml, finding 1: idempotency keys are unique per sender only, and the page
+  // keys each message element by `item.key`; two senders' messages must never share one.
+  test('messages of different senders that share an idempotency key get different item keys', () => {
+    const items = toMessageItems(
+      [
+        entry({ id: '019a0000-0000-7000-8000-000000000001', idempotencyKey: 'k1', senderId: 2 }),
+        entry({ id: '019a0000-0000-7000-8000-000000000002', idempotencyKey: 'k1', senderId: 3 }),
+      ],
+      { formatTime, names, selfId: SELF, statuses: new Map() },
+    );
+
+    expect(new Set(items.map((item) => item.key)).size).toBe(2);
   });
 
   test('own messages carry their status and label; other members messages carry none', () => {
@@ -130,5 +145,13 @@ describe('parseMemberNames', () => {
   test('splits on commas and spaces, trims, and drops duplicates and empties', () => {
     expect(parseMemberNames(' bob, carol  bob,,dave ')).toEqual(['bob', 'carol', 'dave']);
     expect(parseMemberNames('   ')).toEqual([]);
+  });
+});
+
+describe('keyChangeNotice', () => {
+  test('names the member whose security key changed (S5)', () => {
+    expect(keyChangeNotice('bob')).toBe(
+      'The security key of bob changed. Messages to this room are paused until you trust the new key.',
+    );
   });
 });

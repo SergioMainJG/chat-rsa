@@ -23,6 +23,7 @@ export class FakeTokenVerifier extends TokenVerifier {
       expiresAt: new Date(expiresAt),
       name: `user${userId}`,
       sessionId,
+      sessionStartedAt: new Date(0),
       userId: UserId.restore(userId),
     });
     return this;

@@ -21,8 +21,6 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 function isSession(value: unknown): value is AuthResponse {
   return (
     isRecord(value) &&
-    typeof value.token === 'string' &&
-    value.token.length > 0 &&
     isRecord(value.user) &&
     typeof value.user.id === 'number' &&
     typeof value.user.name === 'string'
@@ -38,22 +36,16 @@ export function credentialsFrom(form: FormData): Credentials {
   return { name: field('name'), password: field('password') };
 }
 
+const EPOCH_SECONDS = /^\d{1,12}$/u;
+
 /**
- * Whether a stored JWT has not expired yet, read from its unverified payload. It only decides
- * whether the auth pages send the user on to the chat room; the server still verifies the token,
- * and the chat page clears it on a 401, so a forged or revoked token cannot loop.
+ * Whether the `chat_rsa_session_hint` cookie (the token's `exp`, in epoch seconds) is still in the
+ * future. It only decides whether the auth pages send the user on to the chat room: the JWT itself
+ * is HttpOnly and verified by the server, and the chat page deletes the hint on a 401, so a forged
+ * hint cannot loop.
  */
-export function hasLiveSession(token: null | string, nowMs: number): boolean {
-  const payload = token?.split('.')[1];
-  if (payload === undefined) {
-    return false;
-  }
-  try {
-    const claims: unknown = JSON.parse(atob(payload.replaceAll('-', '+').replaceAll('_', '/')));
-    return isRecord(claims) && typeof claims.exp === 'number' && claims.exp * 1000 > nowMs;
-  } catch {
-    return false;
-  }
+export function hasLiveSession(hint: null | string, nowMs: number): boolean {
+  return hint !== null && EPOCH_SECONDS.test(hint) && Number(hint) * 1000 > nowMs;
 }
 
 export async function outcomeOf(response: Response): Promise<AuthOutcome> {

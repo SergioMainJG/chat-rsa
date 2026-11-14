@@ -23,11 +23,19 @@ async function podExists(): Promise<boolean> {
   return exitCode === 0;
 }
 
+/**
+ * The browser reaches the app on the host port, not the container's 3000, so that origin must be
+ * allowed (CSRF check). `.env` (loaded by Bun here) can override it, e.g. with a tunnel URL.
+ */
+const APP_ORIGINS =
+  Bun.env.APP_ORIGINS ?? `http://localhost:${HOST_PORTS.app},http://127.0.0.1:${HOST_PORTS.app}`;
+
 async function startApp(): Promise<void> {
   await $`podman run -d --replace --pod ${POD} --name ${POD}-app \
     -v ${ROOT}:/app -w /app \
     -e DATABASE_URL=postgres://chat:chat@localhost:5432/chat \
     -e VALKEY_URL=redis://localhost:6379 \
+    -e APP_ORIGINS=${APP_ORIGINS} \
     ${IMAGES.app} sh -c "bun install --frozen-lockfile && bun run dev"`;
 }
 

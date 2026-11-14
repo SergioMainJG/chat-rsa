@@ -4,9 +4,13 @@ import type { EncryptedPayloadWire, MessageView } from './messaging.contract.ts'
  * WebSocket protocol between the chat page and `/ws`. Every frame is one JSON text message with a
  * `type` discriminator.
  *
- * Authentication: the browser cannot set headers on a WebSocket, so the JWT travels in the upgrade
- * request as a subprotocol: `new WebSocket(url, [SOCKET_PROTOCOL, BEARER_PREFIX + jwt])`. The
- * server answers with `SOCKET_PROTOCOL` only.
+ * Authentication: browsers open `new WebSocket(url, [SOCKET_PROTOCOL])` and the upgrade carries the
+ * HttpOnly `chat_rsa_session` cookie, from an `Origin` listed in `APP_ORIGINS` (403 otherwise).
+ * Programmatic clients (tests, k6) may instead send the JWT as a subprotocol: `new WebSocket(url,
+ * [SOCKET_PROTOCOL, BEARER_PREFIX + jwt])`. The server answers with `SOCKET_PROTOCOL` only.
+ *
+ * Renewal: a successful `POST /api/auth/refresh` pushes `auth.refreshed` to every open socket of
+ * that session. Bearer clients may still replace the token with an `auth.refresh` frame.
  */
 export const SOCKET_PROTOCOL = 'chat-rsa.v1';
 export const BEARER_PREFIX = 'bearer.';
@@ -45,7 +49,10 @@ export type ClientFrame =
     }
   /** Joins the live feed of a room the user was added to after connecting. */
   | { readonly roomId: string; readonly type: 'room.subscribe' }
-  /** Replaces the connection's JWT before it expires, without reconnecting. */
+  /**
+   * Bearer clients only: replaces the connection's JWT before it expires, without reconnecting.
+   * Browsers refresh over REST instead and receive `auth.refreshed`.
+   */
   | { readonly token: string; readonly type: 'auth.refresh' };
 
 export type ServerFrame =

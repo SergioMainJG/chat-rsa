@@ -53,16 +53,38 @@ export async function runUserIds(sql: SQL, runId: string): Promise<number[]> {
 }
 
 /**
- * Refills the token buckets a local load run spends (`rl:ip:<loopback>` and `rl:user:<id>` of its
- * own users), so the next run does not start against an exhausted bucket. Other keys stay.
+ * Refills the token buckets a local load run spends (`rl:ip:<loopback>`, `rl:user:<id>` of its own
+ * users and `rl:signin:load<runId>…` of every name it signed in with, registered or not), so the
+ * next run does not start against an exhausted bucket. Other keys stay.
  */
 export async function resetRateLimits(
   client: RedisClient,
   userIds: readonly number[],
+  runId: string,
 ): Promise<void> {
+  // Validates the runId before it becomes a SCAN glob, as it does before the delete pattern.
+  runUserPattern(runId);
   const keys = [
     ...LOOPBACK_ADDRESSES.map((address) => `${RATE_LIMIT_KEY_PREFIX}ip:${address}`),
     ...userIds.map((id) => `${RATE_LIMIT_KEY_PREFIX}user:${id}`),
+    ...(await scanKeys(client, `${RATE_LIMIT_KEY_PREFIX}signin:load${runId}*`)),
   ];
   await client.send('DEL', keys);
+}
+
+/** Every key matching a glob, walked with SCAN so a large keyspace is never blocked by KEYS. */
+async function scanKeys(client: RedisClient, glob: string): Promise<string[]> {
+  const found: string[] = [];
+  let cursor = '0';
+  do {
+    // eslint-disable-next-line no-await-in-loop
+    const reply: unknown = await client.send('SCAN', [cursor, 'MATCH', glob, 'COUNT', '500']);
+    const [next, keys]: unknown[] = Array.isArray(reply) ? reply : [];
+    if (typeof next !== 'string' || !Array.isArray(keys)) {
+      throw new TypeError(`Unexpected SCAN reply: ${JSON.stringify(reply)}`);
+    }
+    found.push(...keys.filter((key): key is string => typeof key === 'string'));
+    cursor = next;
+  } while (cursor !== '0');
+  return found;
 }

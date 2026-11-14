@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { AuthResponse } from '../../../shared/contracts/auth.contract.ts';
 import type { ErrorResponse } from '../../../shared/contracts/error.contract.ts';
 import type { Logger } from '../../shared/domain/logger.ts';
+import type { AuthSession } from '../application/user.session.ts';
 
 import {
   type AppError,
@@ -23,7 +23,22 @@ import {
   type RefreshPort,
 } from './user.controller.ts';
 
-const session: AuthResponse = { token: 'jwt', user: { id: 1, name: 'alice' } };
+const session: AuthSession = {
+  expiresAt: new Date(1_800_000_000_000),
+  token: 'jwt',
+  user: { id: 1, name: 'alice' },
+};
+const MAX_AGE = 3600;
+/** The body every successful sign-in, sign-up and refresh answers: no token in it. */
+const USER_BODY = { user: { id: 1, name: 'alice' } };
+const SESSION_SET_COOKIES = [
+  'chat_rsa_session=jwt; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=3600',
+  'chat_rsa_session_hint=1800000000; Secure; SameSite=Strict; Path=/; Max-Age=3600',
+];
+const CLEARED_SET_COOKIES = [
+  'chat_rsa_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0',
+  'chat_rsa_session_hint=; Secure; SameSite=Strict; Path=/; Max-Age=0',
+];
 
 function post(path: string, body: string, headers: Record<string, string> = {}): Request {
   return new Request(`http://localhost${path}`, {
@@ -34,7 +49,7 @@ function post(path: string, body: string, headers: Record<string, string> = {}):
 }
 
 /** Use case that settles with the given result. */
-function returning(result: Result<AuthResponse, AppError>): AuthUseCase {
+function returning(result: Result<AuthSession, AppError>): AuthUseCase {
   return { execute: async () => result };
 }
 
@@ -61,16 +76,18 @@ const json = JSON.stringify({ name: 'alice', password: 'x' });
 const succeeding = returning(ok(session));
 
 describe('auth controller', () => {
-  test('sign-up answers 201 and sign-in 200 with {user, token}', async () => {
-    const controller = createAuthController({ signIn: succeeding, signUp: succeeding }, recordingLogger());
+  test('sign-up answers 201 and sign-in 200 with {user} only, and set both session cookies', async () => {
+    const controller = createAuthController({ signIn: succeeding, signUp: succeeding }, recordingLogger(), MAX_AGE);
 
     const signUp = await controller.signUp(post('/api/auth/sign-up', json));
     const signIn = await controller.signIn(post('/api/auth/sign-in', json));
 
     expect(signUp.status).toBe(201);
-    expect(await signUp.json()).toEqual(session);
+    expect(await signUp.json()).toEqual(USER_BODY);
+    expect(signUp.headers.getSetCookie()).toEqual(SESSION_SET_COOKIES);
     expect(signIn.status).toBe(200);
-    expect(await signIn.json()).toEqual(session);
+    expect(await signIn.json()).toEqual(USER_BODY);
+    expect(signIn.headers.getSetCookie()).toEqual(SESSION_SET_COOKIES);
   });
 
   test('renders a Result error with field errors', async () => {
@@ -78,6 +95,7 @@ describe('auth controller', () => {
     const controller = createAuthController(
       { signIn: returning(err(new ValidationError(errors))), signUp: succeeding },
       recordingLogger(),
+      MAX_AGE,
     );
 
     const response = await controller.signIn(post('/api/auth/sign-in', json, { 'x-correlation-id': 'abc' }));
@@ -101,6 +119,7 @@ describe('auth controller', () => {
     const controller = createAuthController(
       { signIn: returning(err(new UnauthorizedError('Invalid credentials'))), signUp: succeeding },
       recordingLogger(),
+      MAX_AGE,
     );
 
     const response = await controller.signIn(post('/api/auth/sign-in', json));
@@ -120,6 +139,7 @@ describe('auth controller', () => {
     const controller = createAuthController(
       { signIn: succeeding, signUp: throwing(new ConflictError('User already exists')) },
       logger,
+      MAX_AGE,
     );
 
     const response = await controller.signUp(post('/api/auth/sign-up', json));
@@ -132,7 +152,7 @@ describe('auth controller', () => {
   test('hides an unexpected thrown Error behind a 500 and logs it', async () => {
     const failure = new Error('connection refused to 10.0.0.5');
     const logger = recordingLogger();
-    const controller = createAuthController({ signIn: throwing(failure), signUp: succeeding }, logger);
+    const controller = createAuthController({ signIn: throwing(failure), signUp: succeeding }, logger, MAX_AGE);
 
     const response = await controller.signIn(post('/api/auth/sign-in', json));
 
@@ -150,7 +170,7 @@ describe('auth controller', () => {
     ['[1, 2]', 'Request body must be a JSON object'],
     ['null', 'Request body must be a JSON object'],
   ])('rejects the body %p with a 400', async (raw, message) => {
-    const controller = createAuthController({ signIn: succeeding, signUp: succeeding }, recordingLogger());
+    const controller = createAuthController({ signIn: succeeding, signUp: succeeding }, recordingLogger(), MAX_AGE);
 
     const response = await controller.signUp(post('/api/auth/sign-up', raw));
 
@@ -166,7 +186,7 @@ describe('auth controller', () => {
         return ok(session);
       },
     };
-    const controller = createAuthController({ signIn: spy, signUp: spy }, recordingLogger());
+    const controller = createAuthController({ signIn: spy, signUp: spy }, recordingLogger(), MAX_AGE);
 
     const response = await controller.signIn(post('/api/auth/sign-in', json, { 'content-type': 'text/plain' }));
 
@@ -180,7 +200,7 @@ describe('auth controller', () => {
   });
 });
 
-function refreshing(result: Result<AuthResponse, AppError>, seen: string[] = []): RefreshPort {
+function refreshing(result: Result<AuthSession, AppError>, seen: string[] = []): RefreshPort {
   return {
     execute: async (token) => {
       seen.push(token);
@@ -189,11 +209,8 @@ function refreshing(result: Result<AuthResponse, AppError>, seen: string[] = [])
   };
 }
 
-function refreshRequest(authorization?: string): Request {
-  return new Request('http://localhost/api/auth/refresh', {
-    headers: authorization === undefined ? {} : { authorization },
-    method: 'POST',
-  });
+function refreshRequest(): Request {
+  return new Request('http://localhost/api/auth/refresh', { method: 'POST' });
 }
 
 const ACTOR = UserId.restore(1);
@@ -211,7 +228,7 @@ describe('sign-in next to refresh', () => {
         return ok(session);
       },
     };
-    const controller = createAuthController({ signIn, signUp: succeeding }, recordingLogger());
+    const controller = createAuthController({ signIn, signUp: succeeding }, recordingLogger(), MAX_AGE);
 
     const response = await controller.signIn(
       post('/api/auth/sign-in', JSON.stringify({ extra: 1, name: 'alice', password: 'x' }), {
@@ -220,44 +237,48 @@ describe('sign-in next to refresh', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(session);
+    expect(await response.json()).toEqual(USER_BODY);
     expect(inputs).toEqual([{ extra: 1, name: 'alice', password: 'x' }]);
   });
 });
 
 describe('refresh controller', () => {
-  test('answers 200 with {user, token} for the bearer token', async () => {
+  test('answers 200 with {user} for the session token and sets fresh session cookies', async () => {
     const seen: string[] = [];
-    const controller = createRefreshController(refreshing(ok(session), seen), recordingLogger());
+    const controller = createRefreshController(refreshing(ok(session), seen), recordingLogger(), MAX_AGE);
 
-    const response = await controller.refresh(refreshRequest('Bearer old.jwt'));
+    const response = await controller.refresh(refreshRequest(), 'old.jwt');
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(session);
+    expect(await response.json()).toEqual(USER_BODY);
+    expect(response.headers.getSetCookie()).toEqual(SESSION_SET_COOKIES);
     expect(seen).toEqual(['old.jwt']);
   });
 
-  test('answers 401 without calling the use case when the header is missing', async () => {
+  test('answers 401 without calling the use case when there is no token', async () => {
     const seen: string[] = [];
-    const controller = createRefreshController(refreshing(ok(session), seen), recordingLogger());
+    const controller = createRefreshController(refreshing(ok(session), seen), recordingLogger(), MAX_AGE);
 
-    const response = await controller.refresh(refreshRequest());
+    const response = await controller.refresh(refreshRequest(), null);
 
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ message: 'Missing or invalid token', statusCode: 401 });
+    expect(response.headers.getSetCookie()).toEqual([]);
     expect(seen).toEqual([]);
   });
 
-  test('renders the use case refusal as 401', async () => {
+  test('renders the use case refusal as 401 without cookies', async () => {
     const controller = createRefreshController(
       refreshing(err(new UnauthorizedError('Invalid or expired token'))),
       recordingLogger(),
+      MAX_AGE,
     );
 
-    const response = await controller.refresh(refreshRequest('Bearer expired'));
+    const response = await controller.refresh(refreshRequest(), 'expired');
 
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ message: 'Invalid or expired token' });
+    expect(response.headers.getSetCookie()).toEqual([]);
   });
 });
 
@@ -293,7 +314,7 @@ describe('user lookup controller', () => {
 });
 
 describe('createSignOutController', () => {
-  test('answers 204 with no body once the session is revoked', async () => {
+  test('answers 204 with no body once the session is revoked, and clears both cookies', async () => {
     const seen: string[] = [];
     const controller = createSignOutController(
       {
@@ -305,14 +326,15 @@ describe('createSignOutController', () => {
       recordingLogger(),
     );
 
-    const response = await controller.signOut(refreshRequest('Bearer old.jwt'));
+    const response = await controller.signOut(refreshRequest(), 'old.jwt');
 
     expect(response.status).toBe(204);
     expect(await response.text()).toBe('');
+    expect(response.headers.getSetCookie()).toEqual(CLEARED_SET_COOKIES);
     expect(seen).toEqual(['old.jwt']);
   });
 
-  test('answers 401 without a bearer token, and passes on a refusal', async () => {
+  test('answers 401 without a token, and passes on a refusal, clearing both cookies either way', async () => {
     const seen: string[] = [];
     const controller = createSignOutController(
       {
@@ -324,11 +346,14 @@ describe('createSignOutController', () => {
       recordingLogger(),
     );
 
-    const missing = await controller.signOut(refreshRequest());
-    const refused = await controller.signOut(refreshRequest('Bearer revoked.jwt'));
+    const missing = await controller.signOut(refreshRequest(), null);
+    const refused = await controller.signOut(refreshRequest(), 'revoked.jwt');
 
     expect(missing.status).toBe(401);
     expect(refused.status).toBe(401);
+    expect(await refused.json()).toMatchObject({ message: 'Invalid or expired token', statusCode: 401 });
+    expect(missing.headers.getSetCookie()).toEqual(CLEARED_SET_COOKIES);
+    expect(refused.headers.getSetCookie()).toEqual(CLEARED_SET_COOKIES);
     expect(seen).toEqual(['revoked.jwt']);
   });
 });

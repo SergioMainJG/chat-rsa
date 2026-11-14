@@ -3,18 +3,18 @@
 // Usage: bun run test:load [smoke|load|stress] [auth|messages|all]   (the server must be running)
 import { RedisClient } from 'bun';
 
-import { loadConfig } from '../src/backend/shared/config/env.config.ts';
+import { loadConnectionConfig } from '../src/backend/shared/config/env.config.ts';
 import { createPostgresClient } from '../src/backend/shared/database/postgres.config.ts';
 import { newRunId, runK6 } from '../test/load/k6-runner.ts';
 import { deleteRunData, resetRateLimits, runUserIds } from '../test/load/load.cleanup.ts';
 import {
   parseLoadArgs,
-  PREFLIGHT_TIMEOUT_MS,
   reachable,
   runLoad,
   type Signal,
   stopContainer,
   usage,
+  withTimeout,
 } from '../test/load/load.orchestrator.ts';
 
 async function main(): Promise<number> {
@@ -23,7 +23,8 @@ async function main(): Promise<number> {
     console.error(usage());
     return 1;
   }
-  const config = loadConfig();
+  // The load script signs no tokens, so it does not need (or check) JWT_SECRET.
+  const config = loadConnectionConfig();
   const baseUrl = Bun.env.LOAD_BASE_URL ?? `http://localhost:${config.port}`;
   const sql = createPostgresClient({ max: 1, url: config.databaseUrl });
   const cache = new RedisClient(config.cacheUrl);
@@ -58,7 +59,7 @@ async function main(): Promise<number> {
           }
           return null;
         },
-        resetRateLimits: async (userIds) => resetRateLimits(cache, userIds),
+        resetRateLimits: async (runId, userIds) => resetRateLimits(cache, userIds, runId),
         runK6,
         runUserIds: async (runId) => runUserIds(sql, runId),
         stopContainer,
@@ -71,17 +72,6 @@ async function main(): Promise<number> {
       await sql.close();
     }
   }
-}
-
-async function withTimeout(pending: Promise<unknown>): Promise<boolean> {
-  const timeout = Bun.sleep(PREFLIGHT_TIMEOUT_MS).then(() => false);
-  return Promise.race([
-    pending.then(
-      () => true,
-      () => false,
-    ),
-    timeout,
-  ]);
 }
 
 process.exitCode = await main();

@@ -69,6 +69,20 @@ export function displayName(
   return names.get(userId) ?? `User ${userId}`;
 }
 
+/**
+ * The identity of a message on this device: idempotency keys are unique per sender only (`UNIQUE
+ * (sender_id, idempotency_key)`), so another member can reuse one. The controller keys its entries
+ * and the page keys its message elements with it.
+ */
+export function messageKey(senderId: number, idempotencyKey: string): string {
+  return `${senderId}:${idempotencyKey}`;
+}
+
+/** The warning a room shows while a member's identity key differs from its pin (S5). */
+export function keyChangeNotice(name: string): string {
+  return `The security key of ${name} changed. Messages to this room are paused until you trust the new key.`;
+}
+
 /** Member names typed in a form: separated by commas or spaces, without duplicates. */
 export function parseMemberNames(input: string): string[] {
   return [...new Set(input.split(MEMBER_SEPARATOR).filter((name) => name !== ''))];
@@ -149,7 +163,7 @@ function toMessageItem(
   return {
     failed: entry.failed,
     id: entry.id,
-    key: entry.idempotencyKey,
+    key: messageKey(entry.senderId, entry.idempotencyKey),
     own,
     sender: displayName(entry.senderId, context.selfId, context.names),
     status,

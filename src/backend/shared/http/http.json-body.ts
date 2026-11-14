@@ -63,13 +63,10 @@ export function unknownKeyErrors(
 }
 
 /**
- * Strict JSON body: `application/json` only (415), at most 64 KiB (413), a JSON object (400), and
- * no keys outside `allowedKeys` (400 listing each one).
+ * A JSON object body: `application/json` only (415), at most 64 KiB (413) and a JSON object (400).
+ * Callers that know their fields use `readJsonObject`, which also refuses unknown keys.
  */
-export async function readJsonObject(
-  request: Request,
-  allowedKeys: readonly string[],
-): Promise<JsonObject> {
+export async function readCappedJsonObject(request: Request): Promise<object> {
   if (mediaTypeOf(request) !== 'application/json') {
     throw new UnsupportedMediaTypeError('Content-Type must be application/json');
   }
@@ -77,6 +74,18 @@ export async function readJsonObject(
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     throw new BadRequestError('Request body must be a JSON object');
   }
+  return body;
+}
+
+/**
+ * Strict JSON body: `application/json` only (415), at most 64 KiB (413), a JSON object (400), and
+ * no keys outside `allowedKeys` (400 listing each one).
+ */
+export async function readJsonObject(
+  request: Request,
+  allowedKeys: readonly string[],
+): Promise<JsonObject> {
+  const body = await readCappedJsonObject(request);
   const unknown = unknownKeyErrors(body, allowedKeys);
   if (unknown.length > 0) {
     throw new ValidationError(unknown);

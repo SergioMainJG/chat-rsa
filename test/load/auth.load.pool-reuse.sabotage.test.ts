@@ -79,3 +79,32 @@ describe('a run retried with the same RUN_ID', () => {
     2 * K6_TIMEOUT_MS,
   );
 });
+
+// BUG-LOAD-RUN3-CRIT-01: the real server throttles sign-in per account (`signin:<name>`, 10
+// attempts, then one per 30 s), and the fake models it. A retried run whose rate limits were not
+// reset must still stay inside every name's budget. Only the IP buckets are refilled in between, so
+// the second run starts with whatever the first one spent from each `signin:<name>` bucket.
+describe('a same-RUN_ID smoke rerun against the per-account sign-in bucket', () => {
+  test(
+    'passes without a sign-in bucket reset in between: no pool name runs out of attempts',
+    async () => {
+      const fake = startFakeAuthServer('honest');
+      const runId = newRunId();
+      try {
+        const first = await runK6Against(fake, { runId });
+        expect(failedChecks(first)).toEqual([]);
+        expect(first.exitCode).toBe(0);
+        fake.resetIpRateLimits();
+
+        const retry = await runK6Against(fake, { runId });
+
+        expect(failedChecks(retry)).toEqual([]);
+        expect(retry.exitCode).toBe(0);
+        expect(fake.poolReuses()).toBe(POOL_SIZE);
+      } finally {
+        await fake.stop();
+      }
+    },
+    2 * K6_TIMEOUT_MS,
+  );
+});

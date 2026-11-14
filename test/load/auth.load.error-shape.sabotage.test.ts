@@ -21,6 +21,10 @@ const ERROR_CHECKS = [
   'invalid credentials are 400',
   'text/plain is 415',
   'unknown user is 401',
+  'a foreign Origin is refused with 403',
+  'a cookie-authenticated refresh without Origin is 403',
+  'a signed-out token is refused by refresh',
+  'a signed-out token is refused by GET /api/rooms',
 ] as const;
 
 class StatusProbeError extends AppError {
@@ -46,8 +50,14 @@ describe('status titles used by the k6 suite', () => {
     expect(body.error).toBe(title);
   });
 
+  test('403 is "Forbidden", the title the origin checks expect', async () => {
+    const response = errorResponse(new Request('http://localhost/probe'), new StatusProbeError(403));
+    const body: { error: string } = await response.json();
+    expect(body.error).toBe('Forbidden');
+  });
+
   test('covers every status the auth suite expects as an error', () => {
-    for (const code of [400, 401, 409, 415, 429]) {
+    for (const code of [400, 401, 403, 409, 415, 429]) {
       expect(STATUS_TEXT[code]).toBeDefined();
     }
   });

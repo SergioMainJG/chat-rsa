@@ -1,5 +1,4 @@
 import {
-  BEARER_PREFIX,
   type ClientFrame,
   CloseCode,
   type ServerFrame,
@@ -26,16 +25,17 @@ export type NetworkStatus = {
 export type SocketConnectionDeps = {
   /** Opens a socket that reports its events to the listener; see `createBrowserSocket`. */
   readonly createSocket: (url: string, protocols: string[], listener: SocketListener) => SocketLike;
-  /** The current JWT, or null when the user is signed out. */
-  readonly getToken: () => null | string;
   readonly network: NetworkStatus;
   /** Epoch milliseconds, for scheduling the token refresh. */
   readonly now: () => number;
   readonly onFrame: (frame: ServerFrame) => void;
   readonly onState: (state: ConnectionState) => void;
   readonly random: () => number;
-  /** Fetches a new JWT before the current one expires; rejects when the session is over. */
-  readonly refreshToken: () => Promise<string>;
+  /**
+   * Renews the session cookie before the JWT expires (`POST /api/auth/refresh`); rejects when the
+   * session is over. The server then pushes `auth.refreshed` to this socket.
+   */
+  readonly refreshSession: () => Promise<void>;
   readonly timers: Timers;
   readonly url: string;
 };
@@ -58,7 +58,7 @@ export type Timers = {
 };
 
 const NORMAL_CLOSURE = 1000;
-/** The JWT is renewed this long before it expires. */
+/** The session is renewed this long before its JWT expires. */
 export const REFRESH_LEAD_MS = 60_000;
 
 /**
@@ -83,7 +83,8 @@ function parseFrame(data: string): null | ServerFrame {
 /**
  * One authenticated WebSocket to the chat server that survives network loss: it reconnects with
  * exponential backoff and jitter (S4), waits while the browser is offline and reconnects as soon as
- * the network recovers, stops on an auth failure, and renews the JWT before it expires (S10).
+ * the network recovers, stops on an auth failure, and renews the session before its JWT expires
+ * (S10).
  */
 export class SocketConnection {
   get state(): ConnectionState {
@@ -160,11 +161,6 @@ export class SocketConnection {
       this.#setState('offline');
       return;
     }
-    const token = this.#deps.getToken();
-    if (token === null) {
-      this.#setState('unauthorized');
-      return;
-    }
     this.#setState('connecting');
     this.#generation += 1;
     const generation = this.#generation;
@@ -187,11 +183,8 @@ export class SocketConnection {
         }
       },
     };
-    this.#socket = this.#deps.createSocket(
-      this.#deps.url,
-      [SOCKET_PROTOCOL, `${BEARER_PREFIX}${token}`],
-      listener,
-    );
+    // The browser sends the HttpOnly session cookie with the upgrade; no token is visible here.
+    this.#socket = this.#deps.createSocket(this.#deps.url, [SOCKET_PROTOCOL], listener);
   }
 
   #dropSocket(): void {
@@ -262,10 +255,9 @@ export class SocketConnection {
   async #refresh(): Promise<void> {
     this.#refreshTimer = null;
     try {
-      const token = await this.#deps.refreshToken();
-      if (!this.#isStopped()) {
-        this.send({ token, type: 'auth.refresh' });
-      }
+      // The server answers with fresh cookies and pushes `auth.refreshed`, which schedules the next
+      // refresh; without it the socket's expiry closes it with 4001.
+      await this.#deps.refreshSession();
     } catch {
       if (!this.#isStopped()) {
         this.#clearTimers();

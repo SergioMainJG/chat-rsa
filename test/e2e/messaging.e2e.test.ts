@@ -16,6 +16,7 @@ import {
   SOCKET_PATH,
   SOCKET_PROTOCOL,
 } from '../../src/shared/contracts/messaging.socket.contract.ts';
+import { sessionTokenOf } from '../support/session-cookie.test-support.ts';
 
 // The whole feature over the real server: Postgres, Valkey, HTTP routes and the WebSocket gateway.
 
@@ -44,7 +45,7 @@ beforeAll(async () => {
   await applyUserSchema(sql);
   const { auth, messaging } = composeApp({
     cache,
-    config: { jwtSecret: SECRET, rateLimit: config.rateLimit },
+    config: { ...config, jwtSecret: SECRET },
     hasher: new Argon2PasswordHasher(),
     logger: { error: (error) => console.error(error) },
     sql,
@@ -155,8 +156,8 @@ async function signUp(prefix: string): Promise<Member> {
     body: JSON.stringify({ name, password: PASSWORD }),
     method: 'POST',
   });
-  const body: { token: string; user: { id: number } } = await response.json();
-  return { id: body.user.id, name, token: body.token };
+  const body: { user: { id: number } } = await response.json();
+  return { id: body.user.id, name, token: sessionTokenOf(response) };
 }
 
 describe('messaging over the real server', () => {
@@ -239,11 +240,10 @@ describe('messaging over the real server', () => {
     expect(opened).toBe(false);
   });
 
-  test('a valid token is refreshed over HTTP', async () => {
+  test('a valid bearer token is refreshed over HTTP: {user} in the body, the token in the cookie', async () => {
     const response = await api(alice, '/api/auth/refresh', { method: 'POST' });
     expect(response.status).toBe(200);
-    const body: { token: string; user: { id: number } } = await response.json();
-    expect(body.user.id).toBe(alice.id);
-    expect(body.token.split('.')).toHaveLength(3);
+    expect(await response.json()).toEqual({ user: { id: alice.id, name: alice.name } });
+    expect(sessionTokenOf(response).split('.')).toHaveLength(3);
   });
 });

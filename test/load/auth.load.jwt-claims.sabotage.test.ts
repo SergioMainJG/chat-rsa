@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { JoseTokenVerifier } from '../../src/backend/user/infrastructure/user.security.jose.ts';
+import { sessionTokenOf } from '../support/session-cookie.test-support.ts';
 import { FAKE_JWT_SECRET, type Sabotage, startFakeAuthServer } from './support/fake-auth-server.ts';
 import {
   failedChecks,
@@ -10,11 +11,14 @@ import {
   THRESHOLD_FAILED,
 } from './support/k6-probe.test-support.ts';
 
-// BUG-CRITICAL-04 (load run 2): the auth suite must reject a token whose claims the messaging
-// endpoints would refuse (`sub`, `exp`, `name`, HS256), and the honest fake must issue tokens the
+// BUG-CRITICAL-04 (load run 2) and BUG-LOAD-RUN3-CRIT-03: the auth suite must reject a token whose
+// claims the messaging endpoints would refuse (`sub`, `exp`, `name`, `sid`, `sst`, HS256), and the honest fake must issue tokens the
 // real JoseTokenVerifier accepts, so the fake stays faithful to the contract `messages` relies on.
 
-const AUTH_CHECKS = ['sign-in returns {user, token}', 'sign-up returns {user, token}'];
+const AUTH_CHECKS = [
+  'sign-in returns {user} and the session cookies',
+  'sign-up returns {user} and the session cookies',
+];
 
 async function runAgainst(sabotage: Sabotage): Promise<ProbeRun> {
   const fake = startFakeAuthServer(sabotage);
@@ -32,8 +36,8 @@ async function signUp(baseUrl: string, name: string): Promise<{ token: string; u
     method: 'POST',
   });
   expect(response.status).toBe(201);
-  const body: { token: string; user: { id: number } } = await response.json();
-  return body;
+  const body: { user: { id: number } } = await response.json();
+  return { token: sessionTokenOf(response), user: body.user };
 }
 
 describe('fake auth server tokens', () => {
@@ -49,7 +53,7 @@ describe('fake auth server tokens', () => {
     }
   });
 
-  test.each(['broken-jwt-claims', 'jwt-expired', 'jwt-wrong-alg'] as const)(
+  test.each(['broken-jwt-claims', 'jwt-expired', 'jwt-wrong-alg', 'jwt-no-sid', 'jwt-no-sst'] as const)(
     'the %s token is one the real verifier refuses',
     async (sabotage) => {
       const fake = startFakeAuthServer(sabotage);
@@ -71,6 +75,8 @@ describe('k6 auth suite against tokens with broken claims', () => {
     ['jwt-wrong-alg', 'a token signed with HS512'],
     ['jwt-wrong-name', 'a token whose name is another user'],
     ['jwt-wrong-subject', 'a token whose sub is another user'],
+    ['jwt-no-sid', 'a token without the session id (sid)'],
+    ['jwt-no-sst', 'a token without the session start (sst)'],
   ] as const)(
     'rejects %s (%s)',
     async (sabotage) => {

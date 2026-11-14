@@ -1,428 +1,430 @@
-# Adversarial QA Vulnerability & Mutation Audit (Run 3 — `messages` Load Suite & Harness): Load Test Suite (`test/load` & `scripts/load.ts`)
+# Adversarial QA & Mutation Testing Report — Load Testing (`test/load/` & `scripts/load.ts`) — Run 3 (`messages`, `sign-out`, `auth-hardening`)
+
+- **Target Scope**:
+  - `test/load/messages.load.ts` (532 lines)
+  - `test/load/auth.load.ts` (436 lines)
+  - `test/load/support/fake-messages-server.ts` (228 lines)
+  - `test/load/support/fake-auth-server.ts` (279 lines)
+  - `test/load/support/k6-probe.test-support.ts` (115 lines)
+  - `test/load/messages.load.sabotage.test.ts` (167 lines)
+  - `test/load/auth.load.sabotage.test.ts` (114 lines)
+  - `test/load/auth.load.jwt-claims.sabotage.test.ts` (90 lines)
+  - `test/load/auth.load.rate-limit.sabotage.test.ts` (98 lines)
+  - `test/load/k6-runner.ts` (175 lines)
+  - `test/load/load.cleanup.ts` (172 lines)
+  - `test/load/load.orchestrator.ts` (128 lines)
+  - `scripts/load.ts` (118 lines)
+  - `test/integration/load.cleanup.integration.test.ts` (223 lines)
+  - `test/integration/load.rate-limit-reset.integration.test.ts` (77 lines)
+- **Role**: Adversarial QA & Mutation Analyst (Strictly Read-Only on `*.ts` / `*.test.ts`)
+- **Methodology**:
+  1. Static protocol, concurrency, rate-limit, cookie/session, and cleanup analysis across `test/load/` and `scripts/load.ts`, explicitly auditing the new features introduced in `odd/tasks/sign-out.md` and `odd/tasks/auth-hardening.md`.
+  2. Live adversarial k6 probes against `messages.load.ts`, `auth.load.ts`, `fake-messages-server.ts`, `fake-auth-server.ts`, and `load.orchestrator.ts`.
+  3. `@stryker-mutator/core` v9.6.0 mutation runs on `test/load/k6-runner.ts`, `test/load/load.cleanup.ts`, `test/load/load.orchestrator.ts`, `scripts/load.ts`, and `test/load/support/fake-messages-server.ts`.
+
+---
+
+## Fix Status (2026-11-14)
+
+Tracked in `odd/tasks/load-run3-bugs.md`. Seam check: `bun run verify` (686 pass), `bun run test:integration` (100 pass), `bun run test:e2e` (83 pass), `bun run test:load:probes` (169 pass).
+
+| ID                      | Status                                                                                                                                                                                                                                                                                   |
+| :---------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BUG-LOAD-RUN3-CRIT-01` | Fixed: the fake models `signin:<name>` with the default policy; `auth.load.ts` walks the pool (80 names on `load`); `resetRateLimits` refills `rl:signin:load<runId>*`.                                                                                                                  |
+| `BUG-LOAD-RUN3-CRIT-02` | Fixed: the fake uses the default IP/user/sign-in policies; the `stress` burst starts after `live`/`rest`. Not yet run against the real server.                                                                                                                                           |
+| `BUG-LOAD-RUN3-CRIT-03` | Fixed: `sid`/`sst` checked; refresh checks claims, cookie attributes and the hint; one cookie-only request.                                                                                                                                                                              |
+| `BUG-LOAD-RUN3-CRIT-04` | Fixed, except the sign-out upgrade race (S6), which stays pinned by e2e tests.                                                                                                                                                                                                           |
+| `BUG-LOAD-RUN3-HIGH-01` | Fixed: guarded ISO check; later `rest()` checks still run.                                                                                                                                                                                                                               |
+| `BUG-LOAD-RUN3-HIGH-02` | Fixed: every listed check has a sabotage; hint `Max-Age`, `SameSite=Strict` and `Path=/` added.                                                                                                                                                                                          |
+| `BUG-LOAD-RUN3-HIGH-03` | Fixed: history sabotages fail distinct, exactly asserted sets; a 500 on non-member history is caught.                                                                                                                                                                                    |
+| `BUG-LOAD-RUN3-HIGH-04` | Fixed: steps after a send use the broadcast id when the ack is missing.                                                                                                                                                                                                                  |
+| `BUG-LOAD-RUN3-MED-01`  | Fixed: buckets are refilled even when the cleanup fails, no reset after a signal, `withTimeout` clears its timer, the load script reads `loadConnectionConfig` (no `JWT_SECRET`). Not reproduced (code no longer exists): `parseLoadArgs` `'--'` branches, `if (k6Code === 0) log.info`. |
+| `BUG-LOAD-RUN3-MED-02`  | Fixed: tests for `runUserIds`, the run-id alphabet and trailing junk kill the reported mutants. Not reproduced: `namePrefixOf`, `stepFailed` (the anchor lives in `RUN_ID_PATTERN`).                                                                                                     |
 
 ## Executive Summary
 
-A third-round adversarial QA evaluation (black-box, gray-box, white-box, boundary value analysis, branch coverage, race-condition probing, and `@stryker-mutator/core` mutation testing) was executed against the expanded `messages` load-testing suite and orchestration harness (`test/load/messages.load.ts`, `test/load/messages.load.sabotage.test.ts`, `test/load/support/fake-messages-server.ts`, `test/load/load.cleanup.ts`, `test/load/load.orchestrator.ts`, `test/load/k6-runner.ts`, `scripts/load.ts`, and their companion test files) following the Run 2 remediation.
-
-Although `bun run test:load:probes` (`98 pass, 0 fail`), the load integration tests (`10 pass, 0 fail`), and `bun run verify` (`572 pass, 0 fail`) pass 100%, adversarial testing and Stryker mutation analysis (**98 surviving mutants across `test/load/support/fake-messages-server.ts`, `test/load/load.orchestrator.ts`, `test/load/load.cleanup.ts`, `test/load/k6-runner.ts`, and `scripts/load.ts`**) uncovered **8 confirmed defects (3 Critical, 4 High, 1 Medium)**:
-
-1. **66.7% (18 of 27) of `check()` assertions in `messages.load.ts` have 0% sabotage coverage**, and **7 real-time `/ws` protocol frame types & REST query filters (`presence`, `presence.snapshot`, `typing`, `room.subscribe`, `auth.refresh`, `sender-keys.available`, `delivered` receipts, `?keyEpoch=`, `?since=`, `?until=`) have 0% load coverage**.
-2. **`fake-messages-server.ts` fakes out the IP rate-limit policy at `capacity: 100_000, refillPerSecond: 100_000` (833x the real server's `120`)**, hiding the fact that `messages.load.ts` (`stress`) **fails 100% of the time (`exitCode = 99`, `http_req_failed = 16.75%`, 9 failed checks)** against the real server's default IP policy (`capacity: 120, refillPerSecond: 20`).
-3. **Regression of Run 2 `BUG-CRITICAL-04` and `BUG-HIGH-07` inside `messages.load.ts`**:
-   - `hasErrorShape` in `messages.load.ts:157` calls `new Date(timestamp).toISOString() === timestamp` without guarding against invalid dates, throwing an uncaught `RangeError: Invalid time value` inside k6 (`script exception`) that aborts `rest()` iterations and skips `receipts` and `refresh` checks, and has **0% per-field error-shape sabotage coverage**.
-   - `POST /api/auth/refresh` (`messages.load.ts:387-397`) and `signUp` (`messages.load.ts:215-220`) do not decode JWT claims (`alg`, `sub`, `name`, `exp`), accepting `"undefined.undefined.undefined"` (`3/3 passes`).
-4. **15 surviving Stryker mutants in `MisorderedMessageRepository` (`fake-messages-server.ts:106-138`) & 5 cascading false-failing checks in `no-ack`**:
-   - `history-ascending` and `history-overlap` produce the **exact same 3 failed checks** (`['history is newest first', 'history pages are complete', 'history pages are disjoint']`), so deleting `if (this.mode === 'ascending')` or swapping both modes passes 100% of `messages.load.sabotage.test.ts`.
-   - `'history pages hold at most the limit'` (`messages.load.ts:587`) is dead/untestable through `MessageRepository.page` because `HistoryUseCase.execute` slices `rows.slice(0, limit)` itself, and `'history pages are disjoint'` false-passes on `pages === null`.
-   - In `no-ack`, `messages.load.ts:568` compares `messageOf(delivered)?.id === stored?.id` (`"019..." === undefined`), causing **5 unrelated checks** (`message.new`, `read receipt`, `receipts advance`, `history pages are complete`) to false-fail alongside `send is acked` while taking **44.9 seconds** to time out.
-5. **22 additional surviving mutants in `fake-messages-server.ts` (`non-member-history`, `sender-keys-500`, `withoutRetryAfter`, `stop`)**: replacing `history.execute` with `async () => {}` crashes every history request with `500 Internal Server Error` (`TypeError: undefined is not an object`) yet passes the `non-member-history` test because `messages.load.sabotage.test.ts:90` uses `.toContain(name)` instead of `.toEqual(checks)`.
-6. **Multi-suite exit-code masking and signal/cleanup bugs in `load.orchestrator.ts`**:
-   - Mutating `codes.find((code) => code !== 0)` to `codes.find(() => true)` (`load.orchestrator.ts:126`) **survived**, masking any `messages.load.ts` failure (`99`) whenever `auth.load.ts` passes (`0`).
-   - Mutating `k6Code === 0 && !cleaned ? 1 : k6Code` to `true && !cleaned ? 1 : k6Code` (`load.orchestrator.ts:133`) **survived**, overwriting k6's exit code `99` with `1` when cleanup also fails.
-   - When `deps.cleanup(runId)` throws in `cleanUp()` (`load.orchestrator.ts:143`), `await deps.resetRateLimits(userIds)` on line 144 is **skipped**, leaving Valkey rate-limit buckets exhausted.
-   - When `SIGINT` interrupts `auth.load.ts`, the loop still calls `await deps.resetRateLimits([])` for the skipped `messages.load.ts` suite before checking `if (signals.interrupted !== null)`.
-7. **`runUserIds` in `load.cleanup.ts:48` has 0% test coverage (BlockStatement `{}` survived)**, and `deleteRunData` rolls back 100% of the run's cleanup (`0` users and `0` rooms deleted) if a load user joined a foreign room that later dropped to 2 members.
-8. **`newRunId()` entropy length mutant (`byte * 36` instead of `byte % 36`) survived in `k6-runner.ts:32`**, and `scripts/load.ts` (37 surviving mutants, 33.93% score) leaks un-cancelled 5,000 ms `Bun.sleep` timers in `withTimeout()`.
+| Severity     | ID                      | File & Line                                                                                                      | Summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| :----------- | :---------------------- | :--------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **CRITICAL** | `BUG-LOAD-RUN3-CRIT-01` | `test/load/auth.load.ts:356-393`, `test/load/support/fake-auth-server.ts:207`, `test/load/load.cleanup.ts:59-68` | **New `auth-hardening` S7 Per-Account Throttle (`signin:<name>`, capacity 10, refill 1/30s) Breaks `auth.load.ts` (`load` Profile & `L-02` `pool-exists` Rerun) Against the Real Server, Goes Unmodeled in `fake-auth-server.ts`, and Goes Uncleaned in `resetRateLimits`**: `rejections()` and `signIn()` hammer `data.pool[0]` (`load<runId>p0`) with `[401]` / `[200]` expectations. After 10 attempts (~8s into `load`, or on the 2nd `smoke` run of `L-02` `pool-exists`), `SignInUseCase` answers `429 Too Many Requests`, failing `wrong password is 401`, `checks`, and `http_req_failed` (`exitCode = 99`). `resetRateLimits` never deletes `rl:signin:load<runId>*` keys in Valkey (5-minute TTL).                                            |
+| **CRITICAL** | `BUG-LOAD-RUN3-CRIT-02` | `test/load/messages.load.ts:75-120`, `test/load/support/fake-messages-server.ts:73-77,209`                       | **`messages.load.ts` `stress` Profile Fails Against the Real Server (`exitCode = 99`, `http_req_failed = 15.26%`, `checks = 84.86%`) Because `fake-messages-server.ts` Disables Both the IP Bucket (`100,000`) and the Sign-In Bucket (`1,000`)**: Live k6 `stress` run against the real default `IP_POLICY` (`capacity: 120, refillPerSecond: 20`) sheds `live` (`POST /api/rooms`) and `rest` requests with `429`, failing 8 of 27 checks and crossing both `checks` and `http_req_failed` thresholds.                                                                                                                                                                                                                                                |
+| **CRITICAL** | `BUG-LOAD-RUN3-CRIT-03` | `test/load/auth.load.ts:206-256`, `test/load/messages.load.ts:212-227,392-403`                                   | **Broken `auth-hardening` S3/S4 Session Cookie & JWT Claim Verification in `auth.load.ts` and `messages.load.ts`**: (1) `hasUsableClaims` in `auth.load.ts:206-228` never checks the mandatory `sid` or `sst` claims required by `JoseTokenVerifier.verify` (`user.security.jose.ts:74-78`), so a server issuing `sid`-less/`sst`-less JWTs passes `auth.load.ts` (`exitCode = 0`) while every protected route rejects the token with `401`. (2) `messages.load.ts:392-403` (`POST /api/auth/refresh`) still accepts `Set-Cookie: chat_rsa_session=undefined.undefined.undefined` without `HttpOnly`, `Secure`, `Max-Age`, `SameSite=Strict`, or `chat_rsa_session_hint`, and never tests cookie-based authentication (`Cookie: chat_rsa_session=...`). |
+| **CRITICAL** | `BUG-LOAD-RUN3-CRIT-04` | `test/load/messages.load.ts`, `test/load/auth.load.ts`                                                           | **0% Load & Sabotage Coverage of New `sign-out` and `auth-hardening` Endpoints & Security Controls**: Neither `auth.load.ts` nor `messages.load.ts` exercises `POST /api/auth/sign-out` (`204`, cookie clearing `Max-Age=0`, Valkey `revoked-session:<sid>`, closing `/ws` sockets with `4001`, `S6` upgrade race), `GET /api/rooms/:roomId/members` (`sign-out.md` T3a), `auth.refreshed { expiresAt }` WebSocket push on HTTP refresh (`auth-hardening.md` S4), `auth.refresh` WebSocket frame, or CSRF `Origin` enforcement (`APP_ORIGINS`, `403` on untrusted `Origin` or cookie-authenticated unsafe request without `Origin`).                                                                                                                    |
+| **HIGH**     | `BUG-LOAD-RUN3-HIGH-01` | `test/load/messages.load.ts:159`                                                                                 | **Uncaught `RangeError: Invalid time value` in `hasErrorShape` Aborts the Entire `rest()` Iteration**: `new Date(timestamp).toISOString()` throws `RangeError` when an error response contains a non-date string (e.g., `"yesterday"`), aborting `rest()` mid-iteration before `GET /api/rooms/:id/receipts` and `POST /api/auth/refresh` ever execute. (`auth.load.ts:273` fixed this with `Number.isFinite(Date.parse(timestamp))`, but `messages.load.ts:159` was never updated.)                                                                                                                                                                                                                                                                    |
+| **HIGH**     | `BUG-LOAD-RUN3-HIGH-02` | `test/load/messages.load.sabotage.test.ts:52-166`, `test/load/auth.load.sabotage.test.ts:68-89`                  | **18 of 27 Checks in `messages.load.ts` (66.7%) and 4 of 7 Cookie Checks in `auth.load.ts:248-255` Have 0% Sabotage Coverage**: 18 checks in `messages.load.ts` are never sabotaged. In `auth.load.ts:248-255`, `token.secure === true`, `token.max_age === TOKEN_LIFETIME_SECONDS`, `readable.http_only === false`, and `readable.secure === true` have 0% sabotage coverage in `fake-auth-server.ts`, and `readable.max_age`, `SameSite=Strict`, and `Path=/` are not checked at all.                                                                                                                                                                                                                                                                 |
+| **HIGH**     | `BUG-LOAD-RUN3-HIGH-03` | `test/load/support/fake-messages-server.ts:99-121,158`                                                           | **`MisorderedMessageRepository` Conflates `history-ascending` and `history-overlap` (15 Surviving Stryker Mutants) & `non-member-history` Masks `500` Crashes**: Both history sabotages fail the exact same 3 checks (`history is newest first`, `history pages are complete`, `history pages are disjoint`); `non-member-history` returns `200` instead of `500`, leaving `statuses: [403]` / `http_req_failed` untested on `500` crashes.                                                                                                                                                                                                                                                                                                             |
+| **HIGH**     | `BUG-LOAD-RUN3-HIGH-04` | `test/load/messages.load.ts:471-531`                                                                             | **`live()` WebSocket `no-ack` Sabotage Triggers a Cascading 6-Check Failure**: When `message.ack` is dropped (`no-ack`), `sentId` stays `null`, skipping step 3 (`receipt.read`) and step 4 (`leave` + `join` + stale-epoch send) until the 800ms safety timer closes both sockets, failing 5 unrelated checks.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **MEDIUM**   | `BUG-LOAD-RUN3-MED-01`  | `test/load/load.orchestrator.ts:74-127`, `scripts/load.ts:26`                                                    | **Orchestrator & Runner Defects (10 Surviving Mutants in `load.orchestrator.ts`, 37 in `scripts/load.ts`)**: (1) If `cleanup()` throws in `finally`, `resetRateLimits(userIds)` is skipped entirely, leaving user buckets exhausted. (2) After `SIGINT` on `auth.load.ts`, `runLoad` still runs `resetRateLimits([])` for `messages.load.ts`. (3) `codes.find((code) => code !== 0)` and `if (k6Code === 0)` survive mutation in `load.orchestrator.unit.test.ts`. (4) `scripts/load.ts:26` calls `loadConfig()` outside `NODE_ENV=test`, crashing immediately on the repo's 9-char `.env` `JWT_SECRET` (`auth-hardening` S1) and leaking `setTimeout` handles in `withTimeout`.                                                                        |
+| **MEDIUM**   | `BUG-LOAD-RUN3-MED-02`  | `test/load/load.cleanup.ts:71-79`, `test/load/k6-runner.ts:82`                                                   | **0% Test Coverage of `runUserIds()` in `load.cleanup.ts` (6 Surviving Mutants) & Unpinned `newRunId()` Distribution in `k6-runner.ts` (1 Surviving Mutant)**: `runUserIds(sql, runId)` has zero unit or integration tests; `byte % 36` -> `byte * 36` in `k6-runner.ts:82` survives because `ALPHABET[byte * 36] ?? 'a'` falls back to `'a'`.                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 ---
 
-## 1. Confirmed Bugs, Race Conditions & Surviving Mutants
+## Detailed Findings & Reproduction Proofs
 
-### BUG-CRITICAL-01: 18 of 27 `check()` Assertions (66.7%) in `messages.load.ts` Have Zero Sabotage Coverage, and 7 Core `messages` `/ws` & REST Flows Are Never Exercised
+### `BUG-LOAD-RUN3-CRIT-01`: `auth-hardening` S7 Per-Account Throttle (`signin:<name>`) Breaks `auth.load.ts` (`load` Profile & `L-02` `pool-exists` Rerun) Against the Real Server, Is Unmodeled in `fake-auth-server.ts`, and Is Uncleaned in `resetRateLimits`
 
-- **Classification**: Black-Box & White-Box / Unverified Assertions & Missing Protocol Load Coverage.
-- **Target**:
-  - [messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L1-L766)
-  - [messages.load.sabotage.test.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.sabotage.test.ts#L67-L120)
-  - [fake-messages-server.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/support/fake-messages-server.ts#L55-L65)
-- **How It Was Attacked**:
-  Audited all 27 `check(...)` predicates in `test/load/messages.load.ts` against the 8 sabotages in `test/load/support/fake-messages-server.ts` and `test/load/messages.load.sabotage.test.ts`, and cross-referenced the protocol surface in `src/backend/messaging/presentation/messaging.socket.gateway.ts` and `src/backend/messaging/presentation/messaging.controller.ts`.
-- **What Failed & How It Failed**:
-  1. Line 4 of `test/load/messages.load.ts` claims:
-     `// test/load/messages.load.sabotage.test.ts proves that each check below catches a real defect.`
-     In reality, **18 out of 27 `check()` predicates (66.7%) in `messages.load.ts` have 0% sabotage coverage**. Deleting all 18 checks simultaneously (or replacing their predicates with `() => true`) leaves `bun test ./test/load/messages.load.sabotage.test.ts` passing `10/10`:
-     - `'room is created with both members'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L257))
-     - `'rooms list includes the new room'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L324))
-     - `'user lookup returns {id, name}'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L328))
-     - `'room keys list every member'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L334))
-     - `'adding a member rotates the epoch'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L353))
-     - `'leaving rotates the epoch'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L357))
-     - `'receipts list every member'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L379))
-     - `'refresh returns {user, token}'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L387))
-     - `'ws upgrade opens both sockets'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L628))
-     - `'ready lists the room'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L634))
-     - `'message.new reaches the other member'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L567))
-     - `'read receipt reaches the sender'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L667))
-     - `'receipts advance to the read message'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L679))
-     - `'a join rotates the epoch for live sockets'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L719))
-     - `'a stale-epoch send is refused with conflict'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L727))
-     - `'history pages hold at most the limit'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L587))
-     - `'a burst is answered only with 200 or 429'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L754))
-     - `'429 has the shared error shape'` ([messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L762))
-  2. **7 `messages` protocol flows have 0% load & sabotage coverage in `messages.load.ts`**:
-     - WebSocket client frames never sent: `room.subscribe`, `typing` (`active: true | false`), `auth.refresh`, and `receipt` (`kind: 'delivered'`).
-     - WebSocket server broadcasts never asserted: `presence` (`online: true | false`), `presence.snapshot`, `typing`, `auth.refreshed`, `sender-keys.available` (emitted on `POST /api/rooms/:roomId/sender-keys`), and per-socket frame rate limiting (`rate_limited` / close `1008`).
-     - REST query filters never exercised: `GET /api/rooms/:roomId/sender-keys?keyEpoch=<n>` and `GET /api/rooms/:roomId/messages?since=<iso>&until=<iso>`.
-- **Expected Behavior**:
-  Add dedicated one-defect sabotages in `fake-messages-server.ts` and `messages.load.sabotage.test.ts` so every `check()` in `messages.load.ts` is independently proven to fail when its underlying contract is broken, and exercise `sender-keys.available`, `presence`/`presence.snapshot`, `typing`, `auth.refresh`, `room.subscribe`, and `?keyEpoch=` / `?since=` / `?until=` query filters in `messages.load.ts`.
+#### 1. Root Cause Across Three Files
+
+1. **`src/backend/user/application/user.sign-in.use-case.ts:38-41` (`auth-hardening` S7)**:
+   Every call to `SignInUseCase.execute` (after credential format validation) spends a token from the per-account bucket `signin:${name.value}` with default policy `capacity: 10, refillPerSecond: 1 / 30` (1 token every 30 seconds, Valkey TTL 300 seconds) **before** checking the password hash, returning `429 Too Many Requests` when empty.
+2. **`test/load/auth.load.ts:355-394`**:
+   - `rejections(data)` (`lines 384-394`) sends `wrongPassword = post('/api/auth/sign-in', { name: data.pool[0], password: WRONG_PASSWORD }, [401])` on **every single iteration** (`expectedStatuses(401)` — does not expect `429`, and `check(wrongPassword, { 'wrong password is 401': (r) => hasErrorShape(r, 401, path) })` requires `401`).
+   - `signIn(data)` (`lines 355-362`) also sends `post('/api/auth/sign-in', { name: data.pool[0], password: PASSWORD }, [200])` whenever `scenario.iterationInTest % 20 === 0`.
+   - In the `load` profile (`120s`), `rejections` hits `data.pool[0]` **120 times** (`1 req/s`) and `signIn` hits `data.pool[0]` **30 times** (`5 req/s / 20 users`) = **150 sign-in attempts on `data.pool[0]` in 120 seconds**. Since `signin:<name>` only has `capacity: 10` and refills 4 tokens over 120s (14 tokens total), **~136 out of 150 requests for `data.pool[0]` return `429 Too Many Requests` starting at second ~8 of the `load` run**, failing `'wrong password is 401'`, `'sign-in status is 200'`, `'sign-in returns {user} and the session cookies'`, `checks` (`rate>0.99`), and `http_req_failed` (`rate<0.01`)!
+   - Even in `smoke` (`5s`), Run 1 spends **6 of the 10 tokens** on `data.pool[0]` (1 in `signIn` + 5 in `rejections`). If `smoke` is re-run with the same `--run-id` (the exact `L-02` `pool-exists` recovery scenario), Run 2 spends token 7 in `setup()` (`409` -> `POST /api/auth/sign-in`), token 8 in `signIn`, tokens 9 and 10 in the first two `rejections` iterations, and then **fails on iterations 2, 3, and 4 of `rejections` with `429 Too Many Requests` (`wrong password is 401`: `✓ 2 / ✗ 3`, `exitCode = 99`)**!
+3. **`test/load/support/fake-auth-server.ts:207` & `test/load/load.cleanup.ts:59-68`**:
+   - `fake-auth-server.ts` only models `ipLimiter` (`IP_POLICY`) and **never models the `signin:<name>` bucket**, so `auth.load.sabotage.test.ts` (`L-02: pool-exists`) gives a false-green pass.
+   - `resetRateLimits` in `test/load/load.cleanup.ts:59-68` only deletes `rl:ip:<ip>` and `rl:user:<id>` in Valkey — it **never deletes `rl:signin:load<runId>*`**, leaving `rl:signin:load<runId>p0` exhausted in Valkey for 5 minutes (`ttlMs = 300,000`).
+
+#### 2. Live k6 Reproduction Proof (PROBE 5)
+
+Running `auth.load.ts` (`smoke`) twice with the same `runId` against the real `SignInUseCase` wired with `loadConfig().rateLimit.signin` (`capacity: 10, refillPerSecond: 1/30`):
+
+```text
+PROBE 5 (real signin:<name> bucket across pool-exists rerun): {
+  firstRunExitCode: 0,
+  secondRunCrossedChecks: true,
+  secondRunCrossedHttpReqFailed: true,
+  secondRunExitCode: 99,
+  secondRunFailedChecks: [ "wrong password is 401" ],
+}
+    checks
+    ✗ 'rate>0.99' rate=95.00%
+    http_req_failed
+    ✗ 'rate<0.01' rate=3.75%
+    ✗ wrong password is 401
+      ↳  40% — ✓ 2 / ✗ 3
+```
 
 ---
 
-### BUG-CRITICAL-02: `fake-messages-server.ts` Fakes `IP_POLICY` at `100,000 req/s` (833x the Real Server's `120`), Masking a 100% `stress` Profile Failure (`exitCode = 99`, `http_req_failed = 16.75%`) Against the Real Server
+### `BUG-LOAD-RUN3-CRIT-02`: `messages.load.ts` `stress` Profile Fails Against the Real Server (`exitCode = 99`) Because `fake-messages-server.ts` Disables Both `IP_POLICY` and `signin` Rate Limits
 
-- **Classification**: Gray-Box / Dishonest Test Double & Rate-Limit Budget Collision.
-- **Target**:
-  - [fake-messages-server.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/support/fake-messages-server.ts#L76-L83)
-  - [messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L85-L112)
-  - [messages.load.sabotage.test.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.sabotage.test.ts#L52-L65)
-- **How It Was Attacked**:
-  Executed a live k6 probe (`PROBE 1`) running `messages.load.ts` with `PROFILE=stress` against `createServer` wired with the real default `loadConfig({}).rateLimit` policies (`ip: { capacity: 120, refillPerSecond: 20 }, user: { capacity: 60, refillPerSecond: 10 }`).
-- **What Failed & How It Failed**:
-  1. `test/load/support/fake-messages-server.ts:2-3` states:
-     `// The honest mode IS the real contract (same controllers, use cases, guards and gateway as main.ts)`
-     Yet on line 82, `fake-messages-server.ts` replaces the server's default IP bucket (`capacity: 120, refillPerSecond: 20`) with:
-     ```ts
-     const IP_POLICY = { capacity: 100_000, refillPerSecond: 100_000 };
-     ```
-  2. Why? Because under `PROFILE=stress`, `messages.load.ts` runs `setup()` (`18` requests), `rate_limit` (`BURST = 90` requests in a single `batch()`), `rest` (`12` iterations = `132` requests), and `live` (`12` iterations = `84` HTTP requests + `24` `/ws` upgrades) concurrently from the same loopback IP!
-  3. Every authenticated request in `createGuards` (`src/backend/shared/http/http.guard.ts:43-50`) consumes **one token from the IP bucket BEFORE checking the user bucket**.
-  4. When run against the real `IP_POLICY` (`capacity: 120, refillPerSecond: 20`), the `BURST = 90` batch plus `setup()` (`18` requests) immediately drains `108` of the `120` IP tokens, causing concurrent `rest` and `live` requests (`POST /api/rooms`, `POST /api/rooms/:id/sender-keys`, `GET /api/rooms/:id/messages`, `POST /api/auth/refresh`) to fail with `429 Too Many Requests`:
-     ```text
-     PROBE 1 (real IP_POLICY on stress): {
-       crossedChecks: true,
-       crossedHttpReqFailed: true,
-       exitCode: 99,
-       failedChecks: [
-         "room is created with both members",
-         "sender-keys upload is 201",
-         "sender keys reach the recipient",
-         "non-member history is 403",
-         "receipts list every member",
-         "refresh returns {user, token}",
-         "history is newest first",
-         "history pages are complete",
-         "history pages hold at most the limit"
-       ],
-     }
-     ```
-     Unlike `auth.load.rate-limit.sabotage.test.ts:62` (which explicitly models the real `IP_POLICY` in `fake-auth-server.ts` and asserts the documented saturation behavior), `fake-messages-server.ts` hides the IP bucket exhaustion behind a fake `100,000` IP policy, so `bun run test:load stress messages` passes in probes (`exitCode = 0`) and fails in production/dev (`exitCode = 99`).
-- **Expected Behavior**:
-  Either model the real `loadConfig({}).rateLimit.ip` policy in `fake-messages-server.ts` (matching `fake-auth-server.ts`) and assert the expected `stress` behavior honestly, or scope `messages.load.ts` scenarios/thresholds so `fake-messages-server.ts` (`honest`) and the real server behave identically under `bun run test:load stress messages`.
+#### 1. Root Cause
 
----
+In `test/load/support/fake-messages-server.ts:73-77` and `206-210`:
 
-### BUG-CRITICAL-03: `hasErrorShape` in `messages.load.ts` Crashes with Uncaught `RangeError: Invalid time value` on Malformed Timestamps (Skipping Subsequent Checks), and `POST /api/auth/refresh` Accepts `"undefined.undefined.undefined"` JWTs
+```ts
+const IP_POLICY = { capacity: 100_000, refillPerSecond: 100_000 };
+...
+signIn: new SignInUseCase(users, hasher, tokens, {
+  limiter: new InMemoryRateLimiter(),
+  policy: { capacity: 1000, refillPerSecond: 1000 },
+}),
+```
 
-- **Classification**: White-Box / Regression of Run 2 `BUG-CRITICAL-04` & `BUG-HIGH-07` in `messages.load.ts`.
-- **Target**:
-  - [messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L136-L159)
-  - [messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L205-L234)
-  - [messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L385-L399)
-- **How It Was Attacked**:
-  1. Executed `PROBE 2A`: ran `messages.load.ts` (`smoke`) against a server whose `403 Forbidden` response on `GET /api/rooms/:roomId/messages` returned `timestamp: "yesterday"`.
-  2. Executed `PROBE 2B`: ran `messages.load.ts` (`smoke`) against a server whose `POST /api/auth/refresh` returned `token: "undefined.undefined.undefined"`.
-- **What Failed & How It Failed**:
-  1. **Uncaught `RangeError: Invalid time value` in `hasErrorShape` (`messages.load.ts:156-157`)**:
-     In Run 2 (`odd/tasks/load-messages-bugs.md` Log `L4`), `auth.load.ts` was fixed to use `isIsoTimestamp(timestamp)` after discovering that `new Date('yesterday').toISOString()` throws an uncaught `RangeError` inside k6.
-     However, `messages.load.ts:156-157` still uses the unguarded expression:
-     ```ts
-     typeof timestamp === "string" && new Date(timestamp).toISOString() === timestamp;
-     ```
-     When a `403` or `429` error response has a non-date `timestamp` (e.g. `"yesterday"` or `""`), `hasErrorShape` throws `RangeError: Invalid time value` inside k6 (`script exception`), **aborting the `rest()` iteration at line 369 before `GET /api/rooms/:roomId/receipts` and `POST /api/auth/refresh` are ever called**:
-     ```text
-     level=error msg="RangeError: Invalid time value
-       at toISOString (native)
-       at hasErrorShape (file:///scripts/messages.load.ts:157:36(81))
-       at non-member history is 403 (file:///scripts/messages.load.ts:371:20(12))"
-     PROBE 2A (bad timestamp on 403 in messages.load.ts): {
-       exitCode: 99,
-       nonMemberHistoryCheck: { fails: 3, passes: 0 },
-       receiptsListCheck: undefined,
-       refreshCheck: undefined,
-     }
-     ```
-     Furthermore, **none of the individual fields of `hasErrorShape` in `messages.load.ts` (`statusCode`, `error`, `path`, `correlationId`, `message`, `timestamp`) has any sabotage test** in `messages.load.sabotage.test.ts`.
-  2. **`POST /api/auth/refresh` and `setup()` `signUp` Accept `"undefined.undefined.undefined"` (`messages.load.ts:215-220` & `387-397`)**:
-     While `auth.load.ts` was hardened in Run 2 (`BUG-CRITICAL-04`) with `hasUsableClaims(token, id, name)` to base64url-decode the JWT header and payload and verify `header.alg === 'HS256'`, `payload.sub === String(id)`, `payload.name === name`, and `payload.exp * 1000 > Date.now()`, `messages.load.ts:387-397` still uses the Run 1 regex check:
-     ```ts
-     body.token.split(".").length === 3 &&
-       body.token.split(".").every((segment) => JWT_SEGMENT.test(segment));
-     ```
-     And fails to check `isJsonResponse(r)` or `body.user.name === owner.name`!
-     Live probe proof (`PROBE 2B`):
-     ```text
-     PROBE 2B (undefined.undefined.undefined on refresh): {
-       exitCode: 0,
-       refreshCheck: { fails: 0, passes: 3, name: "refresh returns {user, token}" },
-     }
-     ```
-     Returning `"undefined.undefined.undefined"` (or an expired token, an `HS512` token, or another user's token) from `POST /api/auth/refresh` passes `messages.load.ts` 100%!
-- **Expected Behavior**:
-  Use `isIsoTimestamp` in `messages.load.ts` (`hasErrorShape`), validate refreshed and setup JWTs with `hasUsableClaims(token, id, name)` + `isJsonResponse(r)` + `body.user.name === owner.name`, and add per-field error-shape and JWT-claim sabotage probes to `messages.load.sabotage.test.ts`.
+In production (`src/backend/shared/config/env.config.ts`), `IP_POLICY` is `{ capacity: 120, refillPerSecond: 20 }`. During the `stress` profile of `messages.load.ts`:
+
+- `setup()` consumes **30 tokens** from `ip:127.0.0.1` (`9` sign-ups + `9` identity-key uploads + `4` room creations + `8` sender-key uploads).
+- Then `burst` fires **120 `GET /api/rooms` requests**, `live` fires `POST /api/rooms` + `2x GET /ws` upgrades (`4 req/s` * 2s = 24 requests), and `rest` fires 12 HTTP requests per iteration (`2 req/s` * 2s = 48 requests) — all from the same loopback IP!
+- Unlike `burst` (which accepts `[200, 429]`), `live` (`POST /api/rooms`, `statuses: [201]`) and `rest` (`statuses: [200]`, `[201]`, `[204]`, `[403]`) treat every `429` from the exhausted IP bucket as a hard HTTP failure and check failure.
+
+#### 2. Live k6 Reproduction Proof (PROBE 1)
+
+Running `messages.load.ts` (`stress`) against a server using the real `loadConfig().rateLimit.ip` (`capacity: 120, refillPerSecond: 20`):
+
+```text
+PROBE 1 (real IP_POLICY on stress): {
+  crossedChecks: true,
+  crossedHttpReqFailed: true,
+  exitCode: 99,
+  failedChecks: [
+    "room is created with both members",
+    "sender keys reach the recipient",
+    "non-member history is 403",
+    "receipts list every member",
+    "refresh returns {user} and a fresh session cookie",
+    "history is newest first",
+    "history pages are complete",
+    "history pages hold at most the limit"
+  ],
+}
+```
+
+k6 fails with `exitCode = 99` (`checks` rate `84.86%`, `http_req_failed` rate `15.26%`, 29 failed HTTP requests out of 190).
 
 ---
 
-### BUG-HIGH-04: 15 Surviving Stryker Mutants in `MisorderedMessageRepository` (`fake-messages-server.ts:106-138`), Dead `'history pages hold at most the limit'` Check, and 5 Cascading False Check Failures in `no-ack`
+### `BUG-LOAD-RUN3-CRIT-03`: Broken `auth-hardening` S3/S4 Session Cookie & JWT Claim Verification in `auth.load.ts` and `messages.load.ts`
 
-- **Classification**: White-Box / Stryker Mutant Survival & Coupled Sabotage Assertions.
-- **Target**:
-  - [fake-messages-server.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/support/fake-messages-server.ts#L106-L140)
-  - [messages.load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.ts#L538-L613)
-  - [messages.load.sabotage.test.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.sabotage.test.ts#L67-L97)
-- **How It Was Attacked**:
-  Ran `@stryker-mutator/core` on `test/load/support/fake-messages-server.ts` against `test/load/messages.load.sabotage.test.ts` and ran `PROBE 3` comparing `failedChecks` of `history-ascending`, `history-overlap`, and `no-ack`.
-- **What Failed & How It Failed**:
-  1. **15 Mutants Survived in `MisorderedMessageRepository` & `messageRepositoryFor` (`fake-messages-server.ts:115-138`)**:
-     ```diff
-     [Survived] ConditionalExpression
-     test/load/support/fake-messages-server.ts:115:9
-     - if (this.mode === 'ascending') {
-     + if (true) {
+#### 1. `auth.load.ts:206-228` (`hasUsableClaims`) Ignores Mandatory `sid` and `sst` Claims (`auth-hardening` S3)
 
-     [Survived] ConditionalExpression
-     test/load/support/fake-messages-server.ts:115:9
-     - if (this.mode === 'ascending') {
-     + if (false) {
+In `src/backend/user/infrastructure/user.security.jose.ts:69-80`, `JoseTokenVerifier.verify` rejects any JWT missing `sid` (non-empty `string`) or `sst` (finite `number`):
 
-     [Survived] BlockStatement
-     test/load/support/fake-messages-server.ts:115:36
-     - if (this.mode === 'ascending') {
-     -   const rows = await super.page(roomId, query);
-     -   return rows.toReversed();
-     - }
-     + if (this.mode === 'ascending') {}
+```ts
+if (
+  !Number.isInteger(userId) ||
+  userId < 1 ||
+  typeof payload.exp !== "number" ||
+  typeof payload.name !== "string" ||
+  typeof payload.sid !== "string" ||
+  payload.sid === "" ||
+  typeof payload.sst !== "number" ||
+  !Number.isFinite(payload.sst)
+) {
+  return null;
+}
+```
 
-     [Survived] MethodExpression
-     test/load/support/fake-messages-server.ts:126:12
-     - return rows.filter((message) => before === null || message.id <= before).slice(0, query.limit);
-     + return rows.slice(0, query.limit);
-     ```
-     Why did deleting `if (this.mode === 'ascending')`, swapping `ascending` and `overlap`, or ignoring `before` altogether (`return rows.slice(0, query.limit)`) survive?
-     - In `history-ascending`, reversing each page (`[m4, m5]`) causes `HistoryUseCase` to pick `nextBefore = page.at(-1).id = m5`, so page 2 returns `[m3, m4]`, duplicating `m4`!
-     - In `history-overlap`, the inclusive cursor (`message.id <= before`) repeats `m4` at the boundary (`[m5, m4, m4, m3, ...]`), and in `messages.load.ts:583`, `id < (all[index - 1] ?? '')` evaluates `m4 < m4` (`false`)!
-     - Consequently, **both sabotages fail the exact same 3 checks**:
-       ```text
-       PROBE 3 (history-ascending vs history-overlap failedChecks): {
-         ascending: [ "history is newest first", "history pages are complete", "history pages are disjoint" ],
-         overlap:   [ "history is newest first", "history pages are complete", "history pages are disjoint" ],
-       }
-       ```
-     - Because `messages.load.sabotage.test.ts:90` only asserts `expect(failedChecks(outcome)).toContain(name)`, `history-ascending` and `history-overlap` are completely interchangeable!
-  2. **Dead Check `'history pages hold at most the limit'` & False-Pass on `'history pages are disjoint'` (`messages.load.ts:586-588`)**:
-     - `HistoryUseCase.execute` (`src/backend/messaging/application/messaging.history.use-case.ts:44`) always slices `rows.slice(0, limit)`, so a repository sabotage in `fake-messages-server.ts` can never produce a page larger than `HISTORY_PAGE` (`2`).
-     - In `messages.load.ts:586`:
-       `'history pages are disjoint': () => new Set(all).size === all.length`
-       When `readHistory()` returns `null` (e.g., on `429` or `500`), `all` is `[]`, and `new Set([]).size === [].length` (`0 === 0`) evaluates to **`true`**, false-passing `'history pages are disjoint'` on a failed request!
-  3. **Cascading False Failures & 44.9s Timeout in `no-ack` (`messages.load.ts:555-573`)**:
-     In `fanOut` (`messages.load.ts:568`):
-     ```ts
-     check(delivered, {
-       "message.new reaches the other member": (frame) =>
-         frame !== null && messageOf(frame)?.id === stored?.id,
-     });
-     ```
-     When `no-ack` drops `message.ack`, `ack` is `null` (`stored?.id` is `undefined`), even though `message.new` **did** reach `receiver`! Comparing `messageOf(delivered)?.id === undefined` causes `'message.new reaches the other member'` to false-fail `15/15` times, leaves `ids = []` (`ids.at(-1) === undefined`), sends `{ kind: 'read', messageId: undefined }` (causing `'read receipt reaches the sender'` and `'receipts advance to the read message'` to false-fail), and fails `'history pages are complete'` (`42` failed checks across 6 check names, taking `44.9s`!).
-- **Expected Behavior**:
-  1. Decouple `history-ascending` (e.g., return all messages in ascending order across non-overlapping pages at the controller/use-case level) from `history-overlap` (and check intra-page descending order or `id <= prev` so overlap alone does not fail `'history is newest first'`), add an oversized-page sabotage for `'history pages hold at most the limit'`, and require `list !== null` in `'history pages are disjoint'` and `'history pages are complete'`.
-  2. In `fanOut`, fallback to `const messageId = stored?.id ?? messageOf(delivered)?.id` so `no-ack` fails **only** `'send is acked with the stored message'` (and `'retry is acked as a duplicate of the original'`), and assert exact `failedChecks(outcome).toEqual([...checks])` in `messages.load.sabotage.test.ts`.
+Yet `hasUsableClaims` in `test/load/auth.load.ts:206-228` only checks `header.alg === 'HS256'`, `payload.sub`, `payload.name`, and `payload.exp > nowSeconds` — it **never checks `typeof payload.sid === 'string' && payload.sid.length > 0` or `typeof payload.sst === 'number' && Number.isFinite(payload.sst)`**!
+
+- **Live k6 Reproduction Proof (PROBE 6)**: When an auth server issues HS256 tokens without `sid` or `sst`, `new JoseTokenVerifier(SECRET).verify(token)` returns `null` (`401` on every protected endpoint), yet `auth.load.ts` (`smoke`) passes with **`exitCode = 0` and `failedChecks = []`**!
+
+#### 2. `messages.load.ts:392-403` (`POST /api/auth/refresh`) Accepts `"undefined.undefined.undefined"` and Ignores Cookie Attributes & Hint Cookie (`auth-hardening` S4)
+
+In `test/load/messages.load.ts:392-403`:
+
+```ts
+const refreshed = api("POST", "/api/auth/refresh", { statuses: [200], token: sender.token });
+check(refreshed, {
+  "refresh returns {user} and a fresh session cookie": (res) => {
+    const body = jsonBody(res);
+    const user = body !== null && isRecord(body.user) ? body.user : null;
+    const token = res.cookies[SESSION_COOKIE]?.[0]?.value;
+    return (
+      res.status === 200 &&
+      isJson(res) &&
+      body !== null &&
+      !("token" in body) &&
+      user?.id === sender.id &&
+      user.name === sender.name &&
+      typeof token === "string" &&
+      token.split(".").length === 3 &&
+      token.split(".").every((segment) => JWT_SEGMENT.test(segment))
+    );
+  },
+});
+```
+
+- It **never decodes the refreshed JWT's header or payload** (`alg`, `sub`, `name`, `exp`, `sid`, `sst`), nor checks that `sid` and `sst` were preserved from `sender.token` (`auth-hardening` S3).
+- It **never checks `http_only === true`, `secure === true`, or `max_age === 3600`** on `chat_rsa_session`.
+- It **never checks that `chat_rsa_session_hint` is present or matches `String(payload.exp)`**.
+- **Live k6 Reproduction Proof (PROBE 2B)**: When `POST /api/auth/refresh` returns `Set-Cookie: chat_rsa_session=undefined.undefined.undefined; Path=/` (no `HttpOnly`, no `Secure`, no `Max-Age`, no `chat_rsa_session_hint`, and non-JSON segments), `messages.load.ts` (`smoke`) exits with **`exitCode = 0` and `refreshCheck = { passes: 3, fails: 0 }`**!
+- Furthermore, because `sessionCookies` sets `Secure` on `chat_rsa_session` over `http://localhost` and `messages.load.ts` passes `Authorization: Bearer <token>` on every `api()` call (`messages.load.ts:185-187`), **neither `auth.load.ts` nor `messages.load.ts` ever tests authenticating a subsequent request via `Cookie: chat_rsa_session=<jwt>`**.
 
 ---
 
-### BUG-HIGH-05: 22 Surviving Stryker Mutants in `fake-messages-server.ts` Allow `500 Internal Server Error` Crashes to Masquerade as `non-member-history` and Leave Server Stop/Drain Unverified
+### `BUG-LOAD-RUN3-CRIT-04`: 0% Load & Sabotage Coverage of New `sign-out` and `auth-hardening` Endpoints & Security Controls
 
-- **Classification**: White-Box / Stryker Mutant Survival & Loose Test Assertions.
-- **Target**:
-  - [fake-messages-server.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/support/fake-messages-server.ts#L158-L271)
-  - [messages.load.sabotage.test.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/messages.load.sabotage.test.ts#L67-L97)
-- **How It Was Attacked**:
-  Inspected the remaining 22 surviving mutants from `@stryker-mutator/core` on `test/load/support/fake-messages-server.ts`.
-- **What Failed & How It Failed**:
-  1. **Emptying `history.execute` in `non-member-history` Survived (`fake-messages-server.ts:161-165`)**:
-     ```diff
-     [Survived] BlockStatement
-     test/load/support/fake-messages-server.ts:161:58
-     - history.execute = async (actor, rawRoomId, query) => {
-     -   const roomId = RoomId.create(rawRoomId);
-     -   const room = roomId.ok ? await rooms.findById(roomId.value) : null;
-     -   return execute(room?.memberIds[0] ?? actor, rawRoomId, query);
-     - };
-     + history.execute = async (actor, rawRoomId, query) => {};
-     ```
-     When `history.execute` returns `undefined`, `resultResponse` throws `TypeError: undefined is not an object (evaluating 'result.ok')`, which `respond()` turns into a `500 Internal Server Error` for **every** history call (both `outsider` in `rest()` and `owner` in `live()`).
-     Because `messages.load.sabotage.test.ts:76` & `90` only checks:
-     `expect(failedChecks(outcome)).toContain('non-member history is 403')`
-     and `expect(crossed(outcome, 'http_req_failed')).toBe(true)`, a `500` crash on every history call passes the `non-member-history` test!
-  2. **Emptying `stop()` in `fake-messages-server.ts:227-230` Survived**:
-     ```diff
-     [Survived] BlockStatement
-     test/load/support/fake-messages-server.ts:227:23
-     - stop: async () => {
-     -   await gateway.drain();
-     -   await server.stop(true);
-     - },
-     + stop: async () => {},
-     ```
-     No test verifies that `server.stop()` actually closes the listening port and drains active WebSocket connections.
-  3. **Removing `if (original.status !== 429)` in `stripRetryAfter` (`fake-messages-server.ts:237`) Survived**:
-     ```diff
-     [Survived] ConditionalExpression
-     test/load/support/fake-messages-server.ts:237:7
-     - if (original.status !== 429) {
-     -   return original;
-     - }
-     + if (false) {}
-     ```
-     The early-return guard in `stripRetryAfter` is redundant because non-429 responses have no `retry-after` header.
-- **Expected Behavior**:
-  Assert `expect(failedChecks(outcome).toSorted()).toEqual([...checks].toSorted())` in `messages.load.sabotage.test.ts` (so `non-member-history` cannot break member history in `live()`), remove the redundant `if (original.status !== 429)` guard in `stripRetryAfter`, and verify `server.stop()` closes the server.
+Despite `odd/tasks/sign-out.md` and `odd/tasks/auth-hardening.md` adding new endpoints, WebSocket lifecycle events, and HTTP guard checks, `test/load/` has **0% load and sabotage coverage** for all of the following:
+
+1. **`POST /api/auth/sign-out` (`sign-out.md` S1)**:
+   - Returning `204 No Content` and clearing `chat_rsa_session` + `chat_rsa_session_hint` (`Max-Age=0`).
+   - Revoking `sid` in Valkey (`revoked-session:<sid>`) so subsequent HTTP requests (`GET /api/rooms`), `POST /api/auth/refresh`, `/ws` upgrades, and `auth.refresh` socket frames with any token of that `sid` are rejected with `401` / close code `4001`.
+   - Closing open `/ws` sockets of the revoked session with close code `4001`, including in-flight `/ws` upgrades (`auth-hardening.md` S6).
+2. **`GET /api/rooms/:roomId/members` (`sign-out.md` T3a)**:
+   - Mounted on `createMessagingController` (`src/backend/messaging/presentation/messaging.controller.ts`), wired in `fake-messages-server.ts:190` (`listRoomMembers: new ListRoomMembersUseCase(rooms, users)`), yet **never called anywhere in `test/load/messages.load.ts`**!
+3. **`auth.refreshed` WebSocket Frame on HTTP Refresh & `auth.refresh` Client Frame (`auth-hardening.md` S4)**:
+   - In `messages.load.ts`, `POST /api/auth/refresh` runs inside `rest()` where no WebSocket is open, so the `auth.refreshed { expiresAt }` server push to open sockets of that session is never exercised or asserted under load.
+4. **CSRF `Origin` Guard (`auth-hardening.md` S4, `http.guard.ts:152-161`)**:
+   - Unsafe methods (`POST`, `DELETE`) with an untrusted `Origin` header (`403 Forbidden`) or cookie-authenticated unsafe requests without an `Origin` header (`403 Forbidden`) have **0% load and sabotage coverage** in `auth.load.ts` and `messages.load.ts`.
 
 ---
 
-### BUG-HIGH-06: `load.orchestrator.ts` Surviving Mutants Mask `messages.load.ts` Failures When `auth.load.ts` Passes (`exits = [0, 99]`), Overwrite `k6Code` on Cleanup Failure, and Skip `resetRateLimits` When Cleanup Throws
+### `BUG-LOAD-RUN3-HIGH-01`: Uncaught `RangeError: Invalid time value` in `messages.load.ts:159` (`hasErrorShape`) Aborts `rest()` Mid-Iteration
 
-- **Classification**: White-Box / Stryker Mutant Survival & Orchestrator Control-Flow Bugs.
-- **Target**:
-  - [load.orchestrator.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/load.orchestrator.ts#L90-L152)
-  - [load.orchestrator.test.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/load.orchestrator.test.ts#L67-L195)
-- **How It Was Attacked**:
-  Ran `@stryker-mutator/core` on `test/load/load.orchestrator.ts` and executed `PROBE 4` on `runLoad`.
-- **What Failed & How It Failed**:
-  1. **`messages.load.ts` Failure Masked When `auth.load.ts` Passes (`load.orchestrator.ts:126`)**:
-     ```diff
-     [Survived] ConditionalExpression
-     test/load/load.orchestrator.ts:126:39
-     - const k6Code = codes.find((code) => code !== 0) ?? 0;
-     + const k6Code = codes.find((code) => true) ?? 0;
-     ```
-     In `load.orchestrator.test.ts:101`, the only multi-suite failure test uses `const exits = [99, 0]` (where the first suite `auth.load.ts` fails and the second suite `messages.load.ts` passes). There is **no test for `exits = [0, 99]`** (where `auth.load.ts` passes `0` and `messages.load.ts` fails `99`)! Mutating `codes.find((code) => code !== 0)` to `codes.find(() => true)` (`codes[0]`) survives and causes `bun run test:load smoke all` to exit `0` when `messages.load.ts` fails!
-  2. **`k6Code` (`99`) Overwritten With `1` When Cleanup Also Fails (`load.orchestrator.ts:133`)**:
-     ```diff
-     [Survived] ConditionalExpression
-     test/load/load.orchestrator.ts:133:12
-     - return k6Code === 0 && !cleaned ? 1 : k6Code;
-     + return true && !cleaned ? 1 : k6Code;
-     ```
-     Line 139 comments: `/** True when the run's data is gone; a failure is logged, never thrown, so it cannot hide k6's code. */`
-     Yet no test exercises `k6Code = 99` together with a failing `cleanup`, so mutating `k6Code === 0` to `true` survives and hides `99` behind `1`.
-  3. **`cleanUp()` Skips `resetRateLimits(userIds)` Whenever `deps.cleanup(runId)` Throws (`load.orchestrator.ts:141-145`)**:
-     ```ts
+In `test/load/messages.load.ts:159`:
+
+```ts
+new Date(timestamp).toISOString() === timestamp;
+```
+
+In JavaScript / k6's Goja runtime, `new Date("yesterday").toISOString()` throws `RangeError: Invalid time value` instead of returning `false`. (`auth.load.ts:273` guarded this with `Number.isFinite(Date.parse(timestamp)) && new Date(timestamp).toISOString() === timestamp`, but `messages.load.ts:159` did not.)
+
+- **Live k6 Reproduction Proof (PROBE 2A)**: Returning `timestamp: "yesterday"` on the `403` response of `GET /api/rooms/:id/messages` throws an uncaught `RangeError` inside `rest()`, aborting the VU iteration so `'receipts list every member'` and `'refresh returns {user} and a fresh session cookie'` are **`undefined` (0 executions)**:
+
+```text
+time="2026-11-14T05:16:20Z" level=error msg="RangeError: Invalid time value\n\tat toISOString (native)\n\tat hasErrorShape (file:///scripts/messages.load.ts:159:36(81))"
+PROBE 2A (bad timestamp on 403 in messages.load.ts): {
+  exitCode: 99,
+  nonMemberHistoryCheck: { fails: 3, passes: 0 },
+  receiptsListCheck: undefined,
+  refreshCheck: undefined,
+}
+```
+
+---
+
+### `BUG-LOAD-RUN3-HIGH-02`: 18 of 27 Checks in `messages.load.ts` (66.7%) and 4 of 7 Cookie Checks in `auth.load.ts:248-255` Have 0% Sabotage Coverage
+
+#### 1. 18 Untested Checks in `test/load/messages.load.ts`
+
+`test/load/support/fake-messages-server.ts` defines only **6** `MessagesSabotage` modes (`no-ack`, `no-broadcast`, `duplicate-inserted`, `history-ascending`, `history-overlap`, `non-member-history`), leaving **18 of 27 checks** in `messages.load.ts` with **0% sabotage test coverage**:
+
+1. `'room is created with both members'` (`line 475`)
+2. `'ws upgrade opens both sockets'` (`line 525`)
+3. `'ready lists the room'` (`line 436`)
+4. `'read receipt reaches the sender'` (`line 466`)
+5. `'receipts advance to the read message'` (`line 506`)
+6. `'a join rotates the epoch for live sockets'` (`line 513`)
+7. `'a stale-epoch send is refused with conflict'` (`line 518`)
+8. `'rooms list includes the new room'` (`line 301`)
+9. `'user lookup returns {id, name}'` (`line 310`)
+10. `'room keys list every member'` (`line 319`)
+11. `'adding a member rotates the epoch'` (`line 331`)
+12. `'leaving rotates the epoch'` (`line 340`)
+13. `'sender-keys upload is 201'` (`line 356`)
+14. `'sender keys reach the recipient'` (`line 362`)
+15. `'history pages hold at most the limit'` (`line 277`)
+16. `'receipts list every member'` (`line 381`)
+17. `'refresh returns {user} and a fresh session cookie'` (`line 394`)
+18. `'a burst is answered only with 200 or 429'` (`line 537`)
+
+#### 2. 4 Untested Cookie Checks in `test/load/auth.load.ts:248-255` (`hasSessionCookies`)
+
+In `test/load/auth.load.ts:248-255`:
+
+```ts
+return (
+  token.http_only === true &&
+  token.secure === true &&
+  token.max_age === TOKEN_LIFETIME_SECONDS &&
+  readable.http_only === false &&
+  readable.secure === true &&
+  payload !== null &&
+  readable.value === String(payload.exp) &&
+  hasUsableClaims(token.value, user)
+);
+```
+
+`fake-auth-server.ts` only sabotages `'token-in-body'`, `'session-cookie-not-httponly'`, and `'hint-cookie-mismatch'`. It has **0% sabotage coverage** for:
+
+1. `token.secure === true` (`chat_rsa_session` missing `Secure`)
+2. `token.max_age === TOKEN_LIFETIME_SECONDS` (`chat_rsa_session` with wrong `Max-Age`)
+3. `readable.http_only === false` (`chat_rsa_session_hint` marked `HttpOnly`, which breaks `src/frontend/auth/presentation/session-hint.ts` from reading `document.cookie`)
+4. `readable.secure === true` (`chat_rsa_session_hint` missing `Secure`)
+   And `hasSessionCookies` does not check `readable.max_age === TOKEN_LIFETIME_SECONDS`, `SameSite=Strict`, or `Path=/` at all.
+
+---
+
+### `BUG-LOAD-RUN3-HIGH-03` & `BUG-LOAD-RUN3-HIGH-04`: `fake-messages-server.ts` Sabotage Indistinguishability (`MisorderedMessageRepository`), `non-member-history` `500` Masking, and `live()` `no-ack` Cascade
+
+1. **`MisorderedMessageRepository` (`fake-messages-server.ts:99-121`)**:
+   - In `'history-overlap'`, `page.items.toReversed()` is returned on page 1 (`input.before === null`), which violates `'history is newest first'` (`first >= second`) and swaps the cursor `firstPage.nextCursor`, causing page 2 to miss messages (`'history pages are complete'` fails) in addition to overlapping (`'history pages are disjoint'` fails).
+   - **Live k6 Reproduction Proof (PROBE 3)**: Both `'history-ascending'` and `'history-overlap'` fail the exact same 3 checks (`['history is newest first', 'history pages are complete', 'history pages are disjoint']`), yielding **15 surviving Stryker mutants** in `MisorderedMessageRepository`.
+2. **`non-member-history` (`fake-messages-server.ts:158`)**:
+   - Returns `Response.json({ items: [], nextCursor: null }, { status: 200 })`. Because `200` is only caught by the k6 check (`res.status === 403`) when `statuses: [403]` is overridden or checked, a `500 Internal Server Error` crash on `GET /api/rooms/:id/messages` is never tested.
+3. **`live()` WebSocket `no-ack` Cascade (`messages.load.ts:471-531`)**:
+   - Dropping `message.ack` leaves `sentId = null`, preventing step 3 (`receipt.read`) and step 4 (`leave` + `join` + stale-epoch send) from running and failing **6 checks simultaneously** (`send is acked with the stored message`, `read receipt reaches the sender`, `receipts advance to the read message`, `a join rotates the epoch for live sockets`, `a stale-epoch send is refused with conflict`, and `retry is acked as a duplicate of the original`).
+
+---
+
+### `BUG-LOAD-RUN3-MED-01` & `BUG-LOAD-RUN3-MED-02`: Orchestrator, Cleanup, Runner, and CLI Entrypoint Defects
+
+1. **`test/load/load.orchestrator.ts:103-119`**:
+   ```ts
+   } finally {
+     await dependencies.stopContainer(runId);
      try {
-       const userIds = await deps.runUserIds(runId);
-       const removed = await deps.cleanup(runId);
-       await deps.resetRateLimits(userIds);
-     ```
-     Live probe proof (`PROBE 4A`):
-     ```text
-     PROBE 4A (when cleanup throws, resetRateLimits(userIds) is skipped): {
-       calls: [ "resetRateLimits([])", "cleanup threw" ],
-       code: 1,
+       const userIds = await dependencies.runUserIds(runId);
+       await dependencies.cleanup(runId);
+       await dependencies.resetRateLimits(userIds);
+     } catch (error) {
+       dependencies.log.error(error);
+       cleanupFailed = true;
      }
-     ```
-     When `deps.cleanup(runId)` throws, `deps.resetRateLimits(userIds)` is never called, leaving the loopback IP buckets (`rl:ip:127.0.0.1`, etc.) and user buckets (`rl:user:<id>`) exhausted in Valkey!
-  4. **Redundant `resetRateLimits([])` After `SIGINT` & Untested `running.container !== null` Guard (`load.orchestrator.ts:91-107`)**:
-     - When `SIGINT` interrupts `auth.load.ts`, the next iteration of `for (const script of plan.scripts)` calls `await deps.resetRateLimits([])` (line 103) **before** checking `if (signals.interrupted !== null) break;` (line 105).
-     - `const running = { container: null }` -> `{}` (line 91) and `if (running.container !== null)` -> `if (true)` (line 94) both survived Stryker because `load.orchestrator.test.ts:174-194` never asserts that `stopContainer` was **not** called when a signal arrived while `running.container === null` (or after a container exited).
-     - `export function usage(): string {}` (line 55) also survived with 0% unit test coverage.
-- **Expected Behavior**:
-  Check `if (signals.interrupted !== null) break;` at the start of the suite loop before `resetRateLimits([])`, run `resetRateLimits(userIds)` in a `finally` block inside `cleanUp` even if `deps.cleanup(runId)` throws, and add unit tests in `load.orchestrator.test.ts` for `exits = [0, 99]`, `k6Code = 99` + failing cleanup, `stopContainer` not called when `running.container === null`, and `usage()`.
+   }
+   ```
+   - **Live Reproduction Proof (PROBE 4)**: When `dependencies.cleanup(runId)` throws (e.g., `rooms_min_members` constraint violation), `dependencies.resetRateLimits(userIds)` on line 107 is **skipped completely** (`calls = ['resetRateLimits([])', 'cleanup threw']`), leaving all user rate-limit buckets exhausted in Valkey!
+   - When `interrupted` is set by `SIGINT` during the first suite (`auth.load.ts`), the loop still executes `await dependencies.resetRateLimits([])` for the second suite (`messages.load.ts`) before checking `if (interrupted)` on line 94.
+2. **`scripts/load.ts:26` & `65-80`**:
+   - `const config = loadConfig();` runs with `NODE_ENV` unset (`!== 'test'`). When `.env` has the 9-character `JWT_SECRET=secret123`, `bun run test:load` (`bun scripts/load.ts`) crashes immediately with `Error: JWT_SECRET must be set to at least 32 characters` (`auth-hardening` S1), even for `--cleanup-only`!
+   - `withTimeout` (`scripts/load.ts:65-80`) never calls `clearTimeout` in a `.finally()` block, leaking a 15-second timer handle on every `stopContainer`, `runUserIds`, `deleteRunData`, and `resetRateLimits` call.
+3. **`test/load/load.cleanup.ts:71-79` (`runUserIds`) & `test/load/k6-runner.ts:82` (`newRunId`)**:
+   - `runUserIds(sql, runId)` has **0% unit and integration test coverage** (6 surviving Stryker mutants, including replacing its body with `{}`).
+   - `ALPHABET[byte % 36] ?? 'a'` in `k6-runner.ts:82` survives mutation to `ALPHABET[byte * 36] ?? 'a'` because out-of-bounds indices evaluate to `undefined ?? 'a'`, silently collapsing the entropy of `newRunId()` whenever `byte > 0`!
 
 ---
 
-### BUG-HIGH-07: `runUserIds` in `load.cleanup.ts` Has 0% Test Coverage (100% Mutant Survival), and `deleteRunData` Rolls Back All Cleanup If a Load User Is in a 2-Member Foreign Room
+## `@stryker-mutator/core` v9.6.0 Mutation Audit Results
 
-- **Classification**: White-Box / Database Cleanup Atomicity & Untested Export.
-- **Target**:
-  - [load.cleanup.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/load.cleanup.ts#L23-L53)
-  - [load.cleanup.integration.test.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/integration/load.cleanup.integration.test.ts#L82-L223)
-- **How It Was Attacked**:
-  Ran `@stryker-mutator/core` on `test/load/load.cleanup.ts` against `test/integration/load.cleanup.integration.test.ts` and `test/integration/load.rate-limit-reset.integration.test.ts`.
-- **What Failed & How It Failed**:
-  1. **`runUserIds` Body Deletion Survived (`test/load/load.cleanup.ts:48-53`)**:
-     ```diff
-     [Survived] BlockStatement
-     test/load/load.cleanup.ts:48:78
-     - export async function runUserIds(sql: SQL, runId: string): Promise<number[]> {
-     -   const rows = await sql<
-     -     Array<{ id: number }>
-     -   >`SELECT id FROM users WHERE name ~ ${runUserPattern(runId)}`;
-     -   return rows.map((row) => row.id);
-     - }
-     + export async function runUserIds(sql: SQL, runId: string): Promise<number[]> {}
-     ```
-     Neither `load.cleanup.integration.test.ts` nor `load.rate-limit-reset.integration.test.ts` ever calls `runUserIds(sql, runId)`! If `runUserIds` is broken or returns `[]`, per-user rate-limit keys `rl:user:<id>` are never cleaned up in Valkey.
-  2. **All-or-Nothing Transaction Rollback in `deleteRunData` (`test/load/load.cleanup.ts:25-41`)**:
-     If any single load user (`load<runId>m0`) was added to a foreign user's room and that room has 2 members at cleanup time (for example, a 3-member room `[foreign1, foreign2, loadUser]` where `foreign2` left), `rooms_min_members_on_leave` (`SQLSTATE 23514`) fires at `COMMIT` and **rolls back the deletion of all 29 load users (`p0..p19`, `u0..u9`, `m0..m8`) and all rooms/messages created by the run**.
-- **Expected Behavior**:
-  Add direct integration tests for `runUserIds(sql, runId)` in `test/integration/load.cleanup.integration.test.ts` (verifying it returns the exact IDs of `p`, `u`, and `m` users of `runId`, rejects malformed `runId`s before querying, and ignores foreign users).
+### Summary Table
 
----
+| Mutated File                                | Test Suite Executed                                                              | Killed | Timed Out | Survived | No Cov | Mutation Score |
+| :------------------------------------------ | :------------------------------------------------------------------------------- | :----: | :-------: | :------: | :----: | :------------: |
+| `test/load/k6-runner.ts`                    | `test/load/k6-runner.unit.test.ts`                                               |   53   |     0     |  **1**   |   0    |   **98.15%**   |
+| `test/load/load.cleanup.ts`                 | `load.cleanup.integration.test.ts` + `load.rate-limit-reset.integration.test.ts` |   35   |     0     |  **2**   | **6**  |   **81.40%**   |
+| `test/load/load.orchestrator.ts`            | `test/load/load.orchestrator.unit.test.ts`                                       |   48   |     0     |  **10**  |   0    |   **82.76%**   |
+| `scripts/load.ts`                           | `test/load/*.unit.test.ts`                                                       |   20   |     0     |  **2**   | **35** |   **35.09%**   |
+| `test/load/support/fake-messages-server.ts` | `test/load/messages.load.sabotage.test.ts` (targeted)                            |   —    |     —     |  **21**  |   —    | Audited below  |
 
-### BUG-MEDIUM-08: `newRunId()` Entropy Multiplication Mutant (`byte * 36`) Survived in `k6-runner.ts:32`, and `scripts/load.ts` (`33.93%` Mutation Score) Leaks Uncancelled `Bun.sleep(5_000)` Timers in `withTimeout`
+### Surviving Mutants by File
 
-- **Classification**: White-Box / Stryker Mutant Survival & Timer Resource Leak.
-- **Target**:
-  - [k6-runner.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/k6-runner.ts#L28-L35)
-  - [k6-runner.run-id.test.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/test/load/k6-runner.run-id.test.ts#L23-L44)
-  - [load.ts](file:///home/sergioa/soft-dev/personal-projects/chat-rsa/scripts/load.ts#L20-L85)
-- **How It Was Attacked**:
-  Ran `@stryker-mutator/core` on `test/load/k6-runner.ts` and `scripts/load.ts`.
-- **What Failed & How It Failed**:
-  1. **`(byte % 36).toString(36)` -> `(byte * 36).toString(36)` Survived (`test/load/k6-runner.ts:32`)**:
-     ```diff
-     [Survived] ArithmeticOperator
-     test/load/k6-runner.ts:32:6
-     - (byte % 36).toString(36),
-     + (byte * 36).toString(36),
-     ```
-     When `byte % 36` is mutated to `byte * 36`, `(byte * 36).toString(36)` produces `2` or `3` characters ending in `'0'` per byte (`16..24` characters instead of `RUN_ID_ENTROPY = 8`). Because `k6-runner.run-id.test.ts:42` only checks `expect(\`load\${newRunId()}u9999\`.length).toBeLessThanOrEqual(64)`instead of asserting the exact`RUN_ID_ENTROPY` suffix length (`time.length + 8`), the mutant survived.
-  2. **`scripts/load.ts` Has 37 Surviving Mutants (`33.93%` Score) & Leaks `Bun.sleep(5_000)` Timers (`scripts/load.ts:76-85`)**:
-     ```ts
-     async function withTimeout(pending: Promise<unknown>): Promise<boolean> {
-       const timeout = Bun.sleep(PREFLIGHT_TIMEOUT_MS).then(() => false);
-       return Promise.race([
-         pending.then(
-           () => true,
-           () => false,
-         ),
-         timeout,
-       ]);
-     }
-     ```
-     - Every call to `withTimeout` (`sql\`SELECT 1\``and`cache.send('PING', [])`) starts an uncancelled 5,000 ms `Bun.sleep`timer that remains pending after`pending`resolves in`<1 ms`.
-     - Furthermore, `withTimeout` and `preflight` live inside `scripts/load.ts` (which executes `process.exitCode = await main()` on import) rather than `test/load/load.orchestrator.ts`, leaving all 37 mutants in `scripts/load.ts` (`withTimeout`, `preflight`, `cache.close()`, `await sql.close()`, `LOAD_BASE_URL` fallback) completely untested.
-- **Expected Behavior**:
-  Assert the exact length of `newRunId()` (`before.toString(36).length + 8` or `after.toString(36).length + 8`) in `k6-runner.run-id.test.ts`, move `withTimeout` and `createPreflight` into `test/load/load.orchestrator.ts` (clearing the timer in `finally` with `clearTimeout`), and unit-test them in `load.orchestrator.test.ts`.
+#### 1. `test/load/k6-runner.ts` (1 Surviving Mutant — 98.15%)
 
----
+- **Line 82 (`ArithmeticOperator`)**:
+  ```diff
+  - Array.from(bytes, (byte) => ALPHABET[byte % 36] ?? 'a').join('')
+  + Array.from(bytes, (byte) => ALPHABET[byte * 36] ?? 'a').join('')
+  ```
+  _Why it survived_: `k6-runner.unit.test.ts` only checks `/^[a-z0-9]{10}$/` and uniqueness across 50 random IDs; with `byte * 36`, any `byte === 0` yields `'a'` and any `byte > 0` yields `undefined ?? 'a'`, producing `'aaaaaaaaaa'` unless tested for character distribution.
 
-## 2. Stryker Mutation Testing Summary on `test/load` & `scripts/load.ts`
+#### 2. `test/load/load.cleanup.ts` (8 Surviving / No-Coverage Mutants — 81.40%)
 
-Commands executed (via `bunx --bun @stryker-mutator/core` without modifying repository files):
+- **Lines 74–78 (`BlockStatement`, `StringLiteral`, `ArrayDeclaration` — 6 No-Coverage Mutants in `runUserIds`)**:
+  ```diff
+  export async function runUserIds(sql: SQL, runId: string): Promise<number[]> {
+  -  const prefix = namePrefixOf(runId);
+  -  const rows = await sql<Array<{ id: number }>>`
+  -    SELECT id FROM users WHERE name LIKE ${`${prefix}%`}
+  -  `;
+  -  return rows.map((row) => row.id);
+  +  {}
+  }
+  ```
+  _Why they survived_: `runUserIds` is never called in `load.cleanup.integration.test.ts` or `load.rate-limit-reset.integration.test.ts`.
+- **Line 82 (`Regex` — 1 Surviving Mutant in `namePrefixOf`)**:
+  ```diff
+  - if (!/^[a-z0-9]{6,32}$/u.test(runId)) {
+  + if (!/^[a-z0-9]{6,32}/u.test(runId)) {
+  ```
+  _Why it survived_: `load.cleanup.integration.test.ts:216` only tests `'.*|x'` (which fails at index 0), never testing a valid prefix followed by SQL wildcard characters like `'abcdef0123%'`.
+- **Line 153 (`StringLiteral` — 1 Surviving Mutant in `stepFailed`)**:
+  ```diff
+  - { cause: error, step }
+  + { cause: error, step: "" }
+  ```
+  _Why it survived_: Tests only assert `String(rejection).toContain('minimum is 2')`, never asserting `error.step`.
 
-1. `bunx --bun @stryker-mutator/core run --inPlace --cleanTempDir always --concurrency 2 --testRunner command --commandRunner.command "bun test ./test/load/k6-runner.test.ts ./test/load/k6-runner.run-id.test.ts ./test/load/load.orchestrator.test.ts ./test/integration/load.cleanup.integration.test.ts ./test/integration/load.rate-limit-reset.integration.test.ts -t '^(?!.*stopContainer)'" --coverageAnalysis off --mutate "test/load/k6-runner.ts,test/load/load.cleanup.ts,test/load/load.orchestrator.ts,scripts/load.ts" --reporters clear-text`
-2. `bunx --bun @stryker-mutator/core run --inPlace --cleanTempDir always --concurrency 3 --testRunner command --commandRunner.command "bun test ./test/load/messages.load.sabotage.test.ts -t '^(?!.*no-ack)'" --coverageAnalysis off --mutate "test/load/support/fake-messages-server.ts" --reporters clear-text`
+#### 3. `test/load/load.orchestrator.ts` (10 Surviving Mutants — 82.76%)
 
-| File                                        | Mutation Score | Total Mutants | Killed / Timeout | Survived | Key Surviving Mutants                                                                                                                                                                        |
-| :------------------------------------------ | :------------: | :-----------: | :--------------: | :------: | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scripts/load.ts`                           |   **33.93%**   |      56       |        19        |  **37**  | `withTimeout`, `preflight`, `onSignal`, `cache.close()`, `await sql.close()`, `LOAD_BASE_URL` fallback                                                                                       |
-| `test/load/k6-runner.ts`                    |   **60.98%**   |      41       |        25        |  **16**  | `(byte * 36).toString(36)` in `newRunId()`, `runK6` Podman shell arguments (tested by k6 probes)                                                                                             |
-| `test/load/support/fake-messages-server.ts` |   **67.26%**   |      113      |    76 (73+3)     |  **37**  | All 15 mutants in `MisorderedMessageRepository` (`history-ascending` vs `history-overlap`), `history.execute = async () => {}`, `storeSenderKeys.execute = async () => {}`, `stop: () => {}` |
-| `test/load/load.orchestrator.ts`            |   **92.63%**   |      95       |        88        |  **7**   | `codes.find(() => true)`, `return true && !cleaned ? 1 : k6Code`, `if (running.container !== null)` -> `if (true)`, `usage()`, `stopContainer`                                               |
-| `test/load/load.cleanup.ts`                 |   **93.75%**   |      16       |        15        |  **1**   | `runUserIds` entire function body replaced with `{}`                                                                                                                                         |
-| **Total Instrumented Host Files**           |   **69.47%**   |    **321**    |     **223**      |  **98**  | **98 surviving mutants across the `messages` load harness**                                                                                                                                  |
+- **Line 79 (`ConditionalExpression`, `ArrowFunction`, `EqualityOperator` — 3 Mutants)**:
+  ```diff
+  - return codes.find((code) => code !== 0) ?? 0;
+  + return codes.find(() => true) ?? 0;
+  ```
+  _Why they survived_: In `load.orchestrator.unit.test.ts`, the only multi-script failure test fails on the **first** script (`auth.load.ts` returns `99`, `messages.load.ts` returns `0`). There is no test where the first script returns `0` and the second script returns non-zero (`99`).
+- **Lines 93 & 101 (`BooleanLiteral`, `ConditionalExpression` — 4 Mutants)**:
+  ```diff
+  - await dependencies.resetRateLimits([]);
+  - if (interrupted) {
+  + if (false) {
+      return SIGNAL_EXIT_CODE;
+    }
+  ```
+  _Why they survived_: In the `SIGINT` test (`load.orchestrator.unit.test.ts`), `SIGINT` is fired inside `runK6`, so `if (interrupted)` on line 101 exits on the first script and line 93 is never reached; if line 101 is mutated to `if (false)`, the second script runs `runK6` which returns `130`, returning `130` via `codes.find(...)` without asserting that the second script's `runK6` was skipped.
+- **Line 118 (`ConditionalExpression`, `EqualityOperator` — 2 Mutants)**:
+  ```diff
+  - if (k6Code === 0) {
+  + if (true) {
+      dependencies.log.info(`load: ${script} (${options.profile}) clean — removed ...`);
+    }
+  ```
+  _Why they survived_: No test asserts that `log.info` is suppressed when `k6Code !== 0`.
+- **Line 125 (`ConditionalExpression` — 1 Mutant)**:
+  ```diff
+  - if (cleanupFailed) {
+  + if (false) {
+  ```
+  _Why it survived_: When `cleanup` throws after `k6Code === 99`, `k6Code !== 0 ? k6Code : 1` returns `99` anyway; and no test checks `cleanupFailed` when `runUserIds` throws after `k6Code === 0`.
 
----
+#### 4. `scripts/load.ts` (37 Surviving / No-Coverage Mutants — 35.09%)
 
-## 3. Recommended Action Plan
+- **Lines 25–116 (35 No-Coverage Mutants)**: `main()`, `cleanupOnly()`, `preflight()`, `stopContainer()`, and `withTimeout()` have 0% unit test coverage.
+- **Lines 84 & 90 (2 Surviving Mutants in `parseLoadArgs`)**:
+  - `arg === '--'` -> `false` (no test passes `'--'` to `parseLoadArgs`).
+  - `value.startsWith('--')` -> `false` (no test passes `['--profile', '--smoke']` where the next token starts with `'--'`).
 
-1. **Harden `messages.load.ts` Checks & Protocol Coverage (`BUG-CRITICAL-01`, `BUG-CRITICAL-03`, `BUG-HIGH-04`)**:
-   - Replace `new Date(timestamp).toISOString() === timestamp` in `messages.load.ts:157` with `isIsoTimestamp(timestamp)`.
-   - Validate JWT claims (`alg === 'HS256'`, `sub === String(id)`, `name`, `exp`) and `Content-Type: application/json` on `POST /api/auth/refresh` and `setup()` `signUp`.
-   - Fix `fanOut` (`messages.load.ts:568`) so `no-ack` does not cascade into 5 unrelated false-failing checks, and guard `'history pages are disjoint'` and `'history pages are complete'` with `list !== null`.
-   - Add one-defect sabotages in `fake-messages-server.ts` and `messages.load.sabotage.test.ts` (asserting exact `.toEqual` on `failedChecks(outcome)`) to cover all `check()` assertions and decouple `history-ascending` from `history-overlap`.
-2. **Align `IP_POLICY` Between `fake-messages-server.ts` and the Real Server (`BUG-CRITICAL-02`)**:
-   - Stop faking `IP_POLICY = { capacity: 100_000, refillPerSecond: 100_000 }` in `fake-messages-server.ts`, or calibrate `messages.load.ts` `stress` so `fake-messages-server.ts` (`honest`) and the real server behave identically.
-3. **Fix `load.orchestrator.ts`, `load.cleanup.ts`, `k6-runner.ts`, and `scripts/load.ts` (`BUG-HIGH-06`, `BUG-HIGH-07`, `BUG-MEDIUM-08`)**:
-   - Check `if (signals.interrupted !== null) break;` before `resetRateLimits([])` in `runLoad`, and run `resetRateLimits(userIds)` even when `deps.cleanup(runId)` throws.
-   - Add tests for `exits = [0, 99]`, `k6Code = 99` + failing cleanup, `stopContainer` not called when `running.container === null`, `usage()`, `runUserIds()`, and exact `newRunId()` length (`time.length + 8`).
-   - Extract `withTimeout` (with `clearTimeout` cleanup) and `createPreflight` into `test/load/load.orchestrator.ts` and unit-test them.
+#### 5. `test/load/support/fake-messages-server.ts` (21 Surviving Mutants in Sabotage Implementations)
+
+- **Lines 99–121 (`MisorderedMessageRepository` — 15 Mutants)**: Mutating `this.mode === 'history-ascending'` to `true` or `false`, or mutating `input.before === null` in `'history-overlap'`, survives because `messages.load.sabotage.test.ts:138-153` only checks `toContain('history is newest first')` and `toContain('history pages are disjoint')` — and both modes fail the exact same 3 checks.
+- **Lines 154–160 (`non-member-history` — 6 Mutants)**: Mutating `{ items: [], nextCursor: null }` to `{}` or mutating `status: 200` to `status: 201` survives because `non-member history is 403` fails on any status `!== 403`.

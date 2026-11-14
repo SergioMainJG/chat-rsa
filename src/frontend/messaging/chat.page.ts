@@ -4,14 +4,15 @@
 import type { MessageItem, RoomHeader, RoomItem } from './presentation/chat.view-model.ts';
 
 import { SOCKET_PATH } from '../../shared/contracts/messaging.socket.contract.ts';
-import { enforceAccess, revealPage } from '../auth/auth.page-guard.ts';
-import { ChatController, type SearchResult } from './application/chat.controller.ts';
 import {
-  bootstrapSession,
-  SIGN_IN_PATH,
-  TOKEN_KEY,
-  type TokenStore,
-} from './application/chat.session.ts';
+  clearSessionHint,
+  enforceAccess,
+  revealPage,
+  sessionHint,
+} from '../auth/auth.page-guard.ts';
+import { hasLiveSession } from '../auth/presentation/auth.view.ts';
+import { ChatController, type SearchResult } from './application/chat.controller.ts';
+import { bootstrapSession, type SessionHint, SIGN_IN_PATH } from './application/chat.session.ts';
 import {
   browserNetwork,
   browserTimers,
@@ -31,28 +32,10 @@ const STICK_TO_BOTTOM_PX = 80;
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' });
 
-const tokens: TokenStore = {
-  clear: () => {
-    try {
-      sessionStorage.removeItem(TOKEN_KEY);
-    } catch {
-      // Storage can be blocked; the redirect to sign-in still happens.
-    }
-  },
-  get: () => {
-    try {
-      return sessionStorage.getItem(TOKEN_KEY);
-    } catch {
-      return null;
-    }
-  },
-  set: (token) => {
-    try {
-      sessionStorage.setItem(TOKEN_KEY, token);
-    } catch {
-      // Without storage the token lives only as long as this page.
-    }
-  },
+// The JWT is in an HttpOnly cookie this page never sees; only its expiry hint is readable.
+const hint: SessionHint = {
+  clear: clearSessionHint,
+  isLive: () => hasLiveSession(sessionHint(), Date.now()),
 };
 
 function element<T extends Element>(selector: string, type: new () => T): T {
@@ -68,6 +51,8 @@ const ui = {
   banner: element('[data-connection-banner]', HTMLElement),
   composer: element('[data-composer]', HTMLFormElement),
   createRoomForm: element('[data-create-room-form]', HTMLFormElement),
+  keyWarningList: element('[data-key-warning-list]', HTMLUListElement),
+  keyWarnings: element('[data-key-warnings]', HTMLElement),
   leaveRoom: element('[data-leave-room]', HTMLButtonElement),
   loadOlder: element('[data-load-older]', HTMLButtonElement),
   members: element('[data-members]', HTMLUListElement),
@@ -77,6 +62,8 @@ const ui = {
   roomName: element('[data-room-name]', HTMLElement),
   roomPanel: element('[data-room-panel]', HTMLElement),
   rooms: element('[data-rooms]', HTMLUListElement),
+  /** CSS-only switch between the rooms list and the open room on narrow screens. */
+  roomsToggle: element('#rooms-toggle', HTMLInputElement),
   scroller: element('[data-messages-scroller]', HTMLElement),
   searchEmpty: element('[data-search-empty]', HTMLElement),
   searchForm: element('[data-search-form]', HTMLFormElement),
@@ -156,11 +143,11 @@ async function main(): Promise<void> {
   showConnection('connecting');
   const result = await bootstrapSession({
     fetch: async (url, init) => fetch(url, init),
+    hint,
     keyStoreFor: (userId) => new IndexedDbKeyStore(userId),
     navigate: (path) => {
       location.assign(path);
     },
-    tokens,
   });
   if (result.kind === 'redirected') {
     // The server refused the token (revoked or invalid): leave without ever showing the page.
@@ -179,13 +166,12 @@ async function main(): Promise<void> {
     connect: ({ onFrame, onState }) =>
       new SocketConnection({
         createSocket: createBrowserSocket,
-        getToken: tokens.get,
         network: browserNetwork,
         now: Date.now,
         onFrame,
         onState,
         random: Math.random,
-        refreshToken: session.refreshToken,
+        refreshSession: session.refreshSession,
         timers: browserTimers,
         url: socketUrl(),
       }),
@@ -203,6 +189,16 @@ async function main(): Promise<void> {
         ui.notice.textContent = text;
       },
       renderConnection: showConnection,
+      renderKeyWarnings: (warnings) => {
+        ui.keyWarningList.replaceChildren(
+          ...warnings.map((warning) => {
+            const li = document.createElement('li');
+            li.textContent = warning;
+            return li;
+          }),
+        );
+        ui.keyWarnings.hidden = warnings.length === 0;
+      },
       renderMessages,
       renderRoom: (header) => {
         ui.roomPanel.hidden = header === null;
@@ -220,6 +216,9 @@ async function main(): Promise<void> {
   });
   controller = chat;
   wire(chat);
+  ui.keyWarnings.querySelector('[data-trust-keys]')?.addEventListener('click', () => {
+    void chat.trustNewKeys();
+  });
   ui.signOut.addEventListener('click', () => {
     ui.signOut.disabled = true;
     ui.signOut.setAttribute('aria-busy', 'true');
@@ -268,6 +267,8 @@ function messageElement(item: MessageItem): HTMLLIElement {
 }
 
 async function openRoom(roomId: string): Promise<void> {
+  // On narrow screens picking a room (from the list or a search result) shows that room.
+  ui.roomsToggle.checked = false;
   await controller?.openRoom(roomId);
   rememberRoom(controller?.activeRoomId ?? null);
 }

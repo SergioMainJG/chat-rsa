@@ -7,7 +7,21 @@ export type TokenClaims = {
   readonly name: string;
   /** One sign-in: kept by every refresh, revoked as a whole by sign-out. */
   readonly sessionId: string;
+  /** When the sign-in happened (`sst`); refresh keeps it, so a session has an absolute lifetime. */
+  readonly sessionStartedAt: Date;
   readonly userId: UserId;
+};
+
+/** A signed token and the expiry it carries. */
+export type IssuedToken = {
+  readonly expiresAt: Date;
+  readonly token: string;
+};
+
+/** The session a refreshed token stays in. */
+export type SessionRef = {
+  readonly id: string;
+  readonly startedAt: Date;
 };
 
 export abstract class PasswordHasher {
@@ -26,8 +40,8 @@ export abstract class SessionRevocations {
 }
 
 export abstract class TokenIssuer {
-  /** Signs a token for `user`; without `sessionId` it starts a new session. */
-  abstract issue(user: User, sessionId?: string): Promise<string>;
+  /** Signs a token for `user`; without `session` it starts a new session, now. */
+  abstract issue(user: User, session?: SessionRef): Promise<IssuedToken>;
 }
 
 export abstract class TokenVerifier {

@@ -121,7 +121,6 @@ function setup(options: { visible?: boolean } = {}): {
   };
   const api = new ChatApi({
     fetch: async (url, init) => routes[`${init.method ?? 'GET'} ${url}`]?.() ?? new Response(null, { status: 204 }),
-    getToken: () => 'jwt',
     onUnauthorized: () => {
       // Not exercised here; ChatApi tests cover 401s.
     },
@@ -147,6 +146,11 @@ function setup(options: { visible?: boolean } = {}): {
       },
       encrypt: async ({ keyEpoch, text }) => ({ authTag: 't', chainIndex: 0, ciphertext: text, iv: 'i', keyEpoch }),
       prepareEpoch: async () => [],
+      // Every key is a first sight here; pinning has its own tests (chat.controller.key-change.test.ts).
+      trustIdentityKeys: async () => {
+        // Nothing is pinned by this double.
+      },
+      verifyIdentityKeys: async () => [],
     },
     formatTime: (iso) => iso,
     isDocumentVisible: () => options.visible ?? true,

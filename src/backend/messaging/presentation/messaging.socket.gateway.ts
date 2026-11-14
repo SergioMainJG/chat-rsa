@@ -15,10 +15,13 @@ import {
 import {
   AppError,
   BadRequestError,
+  ForbiddenError,
   UnauthorizedError,
   ValidationError,
 } from '../../shared/domain/app.error.ts';
+import { cookieOf, SESSION_COOKIE } from '../../shared/http/http.cookies.ts';
 import { errorResponse } from '../../shared/http/http.error-response.ts';
+import { hasAllowedOrigin } from '../../shared/http/http.origin.ts';
 import { type Input, roomOfMember } from '../application/messaging.access.ts';
 import { SocketConnection } from './messaging.socket.connection.ts';
 import {
@@ -35,7 +38,11 @@ import {
 import { type Cancel, type Scheduler, systemScheduler } from './messaging.socket.scheduler.ts';
 
 export type SocketGateway = {
-  /** Closes every socket of a signed-out session with 4001 (`auth_failed`). */
+  /**
+   * Closes every socket of a signed-out session with 4001 (`auth_failed`), and remembers the
+   * session so a socket of it that opens later (an upgrade verified just before the sign-out) is
+   * closed the same way.
+   */
   readonly closeSession: (sessionId: string) => void;
   readonly connectionCount: () => number;
   /** Stops new upgrades, waits for in-flight frames (sends being persisted), then closes with 1001. */
@@ -43,6 +50,11 @@ export type SocketGateway = {
   readonly events: RoomEvents;
   /** Frame tasks not settled yet; settled ones are forgotten, so this returns to 0 when idle. */
   readonly inFlightCount: () => number;
+  /**
+   * After `POST /api/auth/refresh`: moves the expiry of the session's sockets and pushes
+   * `auth.refreshed` to them.
+   */
+  readonly renewSession: (sessionId: string, expiresAt: Date) => void;
   /** Handles `GET /ws`: undefined once upgraded, otherwise the JSON error response to return. */
   readonly upgrade: (
     request: Request,
@@ -60,10 +72,14 @@ export type SocketGatewayDependencies = {
   readonly listRooms: ListRoomsUseCase;
   readonly logger: Logger;
   readonly now?: () => number;
+  /** `APP_ORIGINS`: a cookie-authenticated upgrade must come from one of these (CSRF). */
+  readonly origins: readonly string[];
   readonly receipt: ReceiptUseCase;
   readonly rooms: RoomRepository;
   readonly scheduler?: Scheduler;
   readonly sendMessage: SendMessageUseCase;
+  /** How long a closed session is remembered: at least one token lifetime. Default: one hour. */
+  readonly signedOutMemoryMs?: number;
   readonly verifier: TokenVerifier;
 };
 
@@ -73,6 +89,9 @@ type Socket = Bun.ServerWebSocket<SocketConnection>;
 
 /** A malformed frame costs this many tokens, so a few in a row close the socket with 1008. */
 const BAD_FRAME_COST = 10;
+const DEFAULT_SIGNED_OUT_MEMORY_MS = 3_600_000;
+/** A cookie upgrade from an origin that is not allowed. */
+const FORBIDDEN: unique symbol = Symbol('forbidden');
 const DEFAULT_FRAME_LIMIT: BucketPolicy = { capacity: 30, refillPerSecond: 10 };
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
 /** Largest valid frame: a 64 KiB ciphertext in base64 plus the other fields. */
@@ -111,6 +130,8 @@ class Gateway {
   /** Users whose `online: true` was published; cleared when their last socket closes. */
   private readonly announced = new Set<number>();
   private readonly byUser = new Map<number, Set<Socket>>();
+  /** Signed-out session ids and when they may be forgotten (epoch milliseconds). */
+  private readonly closedSessions = new Map<string, number>();
   private readonly connections = new Set<Socket>();
   private draining = false;
   private readonly frameLimit: BucketPolicy;
@@ -138,6 +159,16 @@ class Gateway {
   }
 
   closeSession(sessionId: string): void {
+    const now = this.now();
+    for (const [closed, forgetAt] of this.closedSessions) {
+      if (forgetAt <= now) {
+        this.closedSessions.delete(closed);
+      }
+    }
+    this.closedSessions.set(
+      sessionId,
+      now + (this.deps.signedOutMemoryMs ?? DEFAULT_SIGNED_OUT_MEMORY_MS),
+    );
     for (const ws of this.connections) {
       if (ws.data.sessionId === sessionId) {
         this.authFailed(ws, 'Signed out');
@@ -173,6 +204,11 @@ class Gateway {
 
   open(ws: Socket): void {
     const connection = ws.data;
+    if (this.isClosedSession(connection.sessionId)) {
+      // Upgraded with a token verified just before its session was signed out.
+      this.authFailed(ws, 'Signed out');
+      return;
+    }
     const sockets = this.byUser.get(connection.userId) ?? new Set<Socket>();
     sockets.add(ws);
     this.byUser.set(connection.userId, sockets);
@@ -244,6 +280,15 @@ class Gateway {
     }
   }
 
+  renewSession(sessionId: string, expiresAt: Date): void {
+    for (const ws of this.connections) {
+      if (ws.data.sessionId === sessionId) {
+        this.scheduleExpiry(ws, expiresAt.getTime());
+        this.send(ws, { expiresAt: expiresAt.toISOString(), type: 'auth.refreshed' });
+      }
+    }
+  }
+
   async upgrade(
     request: Request,
     server: Bun.Server<SocketConnection>,
@@ -252,13 +297,16 @@ class Gateway {
     if (this.draining) {
       return shuttingDown(request);
     }
-    const token = bearerTokenOf(request);
-    const claims = token === null ? null : await this.deps.verifier.verify(token);
+    const credential = this.credentialOf(request);
+    if (credential === FORBIDDEN) {
+      return errorResponse(request, new ForbiddenError('Origin not allowed'));
+    }
+    const claims = credential === null ? null : await this.deps.verifier.verify(credential);
     if (claims === null) {
       return errorResponse(
         request,
         new UnauthorizedError(
-          `Sec-WebSocket-Protocol must list ${SOCKET_PROTOCOL} and one valid bearer token`,
+          `Sec-WebSocket-Protocol must list ${SOCKET_PROTOCOL} and one valid bearer token, or the request must carry a valid session cookie`,
         ),
       );
     }
@@ -281,6 +329,11 @@ class Gateway {
       : errorResponse(request, new BadRequestError('Expected a WebSocket upgrade request'));
   }
 
+  /**
+   * The upgrade's token: a `bearer.<jwt>` subprotocol (programmatic clients), else the session
+   * cookie when the subprotocols are only `chat-rsa.v1` (browsers). A cookie needs an allowed
+   * `Origin`, since a foreign page could open the socket with it (cross-site WebSocket hijacking).
+   */
   private authFailed(ws: Socket, message: string): void {
     this.send(ws, errorFrame('auth_failed', message, null));
     this.closeWith(ws, CloseCode.AuthFailed, message);
@@ -295,6 +348,21 @@ class Gateway {
         ws.ping();
       }
     }
+  }
+
+  private credentialOf(request: Request): null | string | typeof FORBIDDEN {
+    const bearer = bearerTokenOf(request);
+    if (bearer !== null) {
+      return bearer;
+    }
+    const protocols = (request.headers.get('sec-websocket-protocol') ?? '')
+      .split(',')
+      .map((entry) => entry.trim());
+    const cookie = cookieOf(request, SESSION_COOKIE);
+    if (cookie === null || protocols.length !== 1 || protocols[0] !== SOCKET_PROTOCOL) {
+      return null;
+    }
+    return hasAllowedOrigin(request, this.deps.origins) ? cookie : FORBIDDEN;
   }
 
   /** Sends to every socket subscribed to the room, the publishing user's sockets included. */
@@ -326,6 +394,18 @@ class Gateway {
     const message =
       error instanceof AppError && code !== 'internal' ? error.message : 'Internal error';
     this.send(ws, errorFrame(code, message, ref));
+  }
+
+  private isClosedSession(sessionId: string): boolean {
+    const forgetAt = this.closedSessions.get(sessionId);
+    if (forgetAt === undefined) {
+      return false;
+    }
+    if (forgetAt <= this.now()) {
+      this.closedSessions.delete(sessionId);
+      return false;
+    }
+    return true;
   }
 
   private isDraining(): boolean {
@@ -509,8 +589,9 @@ class Gateway {
 }
 
 /**
- * The `/ws` endpoint: JWT auth at upgrade, room fan-out over Bun pub/sub (`room:<id>` topics),
- * heartbeat, token refresh and expiry, and a drain for graceful shutdown.
+ * The `/ws` endpoint: JWT auth at upgrade (bearer subprotocol or session cookie), room fan-out over
+ * Bun pub/sub (`room:<id>` topics), heartbeat, token refresh and expiry, and a drain for graceful
+ * shutdown.
  */
 export function createSocketGateway(deps: SocketGatewayDependencies): SocketGateway {
   const gateway = new Gateway(deps);
@@ -523,6 +604,9 @@ export function createSocketGateway(deps: SocketGatewayDependencies): SocketGate
     drain: async () => gateway.drain(),
     events: gateway.events,
     inFlightCount: () => gateway.inFlightCount(),
+    renewSession: (sessionId, expiresAt) => {
+      gateway.renewSession(sessionId, expiresAt);
+    },
     upgrade: async (request, server) => gateway.upgrade(request, server),
     websocket: {
       close: (ws) => {

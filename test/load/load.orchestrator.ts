@@ -17,7 +17,8 @@ export type LoadDependencies = {
   readonly onSignal: (handler: (signal: Signal) => void) => () => void;
   /** Null when the server, PostgreSQL and Valkey answer; otherwise what is down. */
   readonly preflight: () => Promise<null | string>;
-  readonly resetRateLimits: (userIds: readonly number[]) => Promise<void>;
+  /** Refills the loopback IP buckets, the given users' buckets and the run's sign-in buckets. */
+  readonly resetRateLimits: (runId: string, userIds: readonly number[]) => Promise<void>;
   readonly runK6: (run: K6Run) => Promise<number>;
   readonly runUserIds: (runId: string) => Promise<number[]>;
   readonly stopContainer: (name: string) => Promise<void>;
@@ -72,8 +73,30 @@ export async function reachable(
   );
 }
 
+/** True when `pending` resolves within the timeout; the timer is cleared as soon as it settles. */
 export async function stopContainer(name: string): Promise<void> {
   await $`podman stop --time 2 ${name}`.quiet().nothrow();
+}
+
+export async function withTimeout(
+  pending: Promise<unknown>,
+  timeoutMs = PREFLIGHT_TIMEOUT_MS,
+): Promise<boolean> {
+  const expired = Promise.withResolvers<boolean>();
+  const timer = setTimeout(() => {
+    expired.resolve(false);
+  }, timeoutMs);
+  try {
+    return await Promise.race([
+      pending.then(
+        () => true,
+        () => false,
+      ),
+      expired.promise,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Runs the plan and returns the process exit code; the cleanup runs whatever happens to k6. */
@@ -88,6 +111,8 @@ export async function runLoad(plan: LoadPlan, deps: LoadDependencies): Promise<n
   const pattern = runUserPattern(runId);
   // Written by the signal handler, so kept in objects rather than narrowed locals.
   const signals: { interrupted: null | Signal } = { interrupted: null };
+  // A call, not a property read: TypeScript would keep a narrowed `interrupted` across the awaits.
+  const interrupted = (): boolean => signals.interrupted !== null;
   const running: { container: null | string } = { container: null };
   const removeHandler = deps.onSignal((signal) => {
     signals.interrupted = signal;
@@ -98,11 +123,15 @@ export async function runLoad(plan: LoadPlan, deps: LoadDependencies): Promise<n
   const codes: number[] = [];
   try {
     for (const script of plan.scripts) {
+      // A signal during the previous suite: no reset and no k6 for this one.
+      if (interrupted()) {
+        break;
+      }
       // Each suite starts with full buckets, so one suite's traffic cannot fail the next one.
       // eslint-disable-next-line no-await-in-loop
-      await deps.resetRateLimits([]);
+      await deps.resetRateLimits(runId, []);
       // Checked after the reset too: a signal that arrives during it must not start k6.
-      if (signals.interrupted !== null) {
+      if (interrupted()) {
         break;
       }
       const name = containerName(runId, script);
@@ -136,18 +165,35 @@ export async function runLoad(plan: LoadPlan, deps: LoadDependencies): Promise<n
   }
 }
 
-/** True when the run's data is gone; a failure is logged, never thrown, so it cannot hide k6's code. */
+/**
+ * True when the run's data is gone and its buckets are full again. The buckets are refilled even
+ * when the delete fails, so the next run does not start against them. A failure is logged, never
+ * thrown, so it cannot hide k6's code.
+ */
 async function cleanUp(runId: string, pattern: string, deps: LoadDependencies): Promise<boolean> {
+  let userIds: readonly number[] = [];
+  let removed: null | RemovedRunData = null;
   try {
-    const userIds = await deps.runUserIds(runId);
-    const removed = await deps.cleanup(runId);
-    await deps.resetRateLimits(userIds);
-    deps.log.info(
-      `Removed ${removed.users} load-test users and ${removed.rooms} rooms (pattern ${pattern}).`,
-    );
-    return true;
+    userIds = await deps.runUserIds(runId);
+    removed = await deps.cleanup(runId);
   } catch (error) {
-    deps.log.error(`Cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
+    logCleanupFailure(deps, error);
+  }
+  try {
+    await deps.resetRateLimits(runId, userIds);
+  } catch (error) {
+    logCleanupFailure(deps, error);
     return false;
   }
+  if (removed === null) {
+    return false;
+  }
+  deps.log.info(
+    `Removed ${removed.users} load-test users and ${removed.rooms} rooms (pattern ${pattern}).`,
+  );
+  return true;
+}
+
+function logCleanupFailure(deps: LoadDependencies, error: unknown): void {
+  deps.log.error(`Cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
 }

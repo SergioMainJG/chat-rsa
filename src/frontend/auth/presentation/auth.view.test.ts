@@ -2,31 +2,25 @@ import { describe, expect, test } from 'bun:test';
 
 import { credentialsFrom, hasLiveSession, outcomeOf } from './auth.view.ts';
 
-function tokenWith(payload: unknown): string {
-  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  return `header.${encoded}.signature`;
-}
-
 const NOW_MS = 1_800_000_000_000;
 
-describe('hasLiveSession', () => {
-  test('a token whose exp is in the future is a live session', () => {
-    expect(hasLiveSession(tokenWith({ exp: NOW_MS / 1000 + 60, sub: '7' }), NOW_MS)).toBe(true);
+describe('hasLiveSession (from the chat_rsa_session_hint cookie: exp in epoch seconds)', () => {
+  test('a hint whose exp is in the future is a live session', () => {
+    expect(hasLiveSession(String(NOW_MS / 1000 + 60), NOW_MS)).toBe(true);
   });
 
-  test('an expired token is not a live session', () => {
-    expect(hasLiveSession(tokenWith({ exp: NOW_MS / 1000 - 1, sub: '7' }), NOW_MS)).toBe(false);
+  test('an expired hint is not a live session', () => {
+    expect(hasLiveSession(String(NOW_MS / 1000 - 1), NOW_MS)).toBe(false);
   });
 
-  test('no token is not a live session', () => {
+  test('no hint is not a live session', () => {
     expect(hasLiveSession(null, NOW_MS)).toBe(false);
   });
 
-  test('a malformed token or one without a numeric exp is not a live session', () => {
-    expect(hasLiveSession('not-a-jwt', NOW_MS)).toBe(false);
-    expect(hasLiveSession('header.%%%.signature', NOW_MS)).toBe(false);
-    expect(hasLiveSession(tokenWith({ sub: '7' }), NOW_MS)).toBe(false);
-    expect(hasLiveSession(tokenWith({ exp: 'soon' }), NOW_MS)).toBe(false);
+  test('a hint that is not a whole number of seconds is not a live session', () => {
+    for (const hint of ['', 'soon', '1e12', '1800000060.5', '-1', 'header.payload.signature']) {
+      expect(hasLiveSession(hint, NOW_MS)).toBe(false);
+    }
   });
 });
 
@@ -38,7 +32,7 @@ function form(entries: Record<string, string>): FormData {
   return data;
 }
 
-const session = { token: 'header.payload.signature', user: { id: 7, name: 'alice' } };
+const session = { user: { id: 7, name: 'alice' } };
 
 describe('credentialsFrom', () => {
   test('reads name and password from the form', () => {
@@ -55,7 +49,7 @@ describe('credentialsFrom', () => {
 });
 
 describe('outcomeOf', () => {
-  test('a 2xx {user, token} body is a success with the session that goes to the chat room', async () => {
+  test('a 2xx {user} body (the token is only in the cookie) is a success with the session that goes to the chat room', async () => {
     expect(await outcomeOf(Response.json(session, { status: 201 }))).toEqual({
       kind: 'success',
       redirectTo: '/chat',
@@ -98,7 +92,7 @@ describe('outcomeOf', () => {
 
   test.each([
     ['a non-JSON error body', new Response('<html>bad gateway</html>', { status: 502 })],
-    ['a 2xx body without a token', Response.json({ user: { id: 1, name: 'a' } }, { status: 200 })],
+    ['a 2xx body without a user', Response.json({ token: 'a.b.c' }, { status: 200 })],
   ])('falls back to a generic message for %s', async (_, response) => {
     expect(await outcomeOf(response)).toEqual({
       fieldErrors: {},

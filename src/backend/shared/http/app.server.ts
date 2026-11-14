@@ -19,6 +19,7 @@ import chatPage from '../../../frontend/messaging/chat.html';
 import { SOCKET_PATH } from '../../../shared/contracts/messaging.socket.contract.ts';
 import { NotFoundError } from '../domain/app.error.ts';
 import { errorResponse } from './http.error-response.ts';
+import { publicAssetRoutes } from './public-assets.ts';
 
 /** Everything the messaging feature mounts: REST routes behind the guards, and `/ws`. */
 export type MessagingServerDependencies = {
@@ -63,6 +64,7 @@ export function createServer({
       ),
     port,
     routes: {
+      ...publicAssetRoutes(),
       '/': index,
       '/api/auth/sign-in': { POST: messaging ? messaging.guards.public(auth.signIn) : auth.signIn },
       '/api/auth/sign-up': { POST: messaging ? messaging.guards.public(auth.signUp) : auth.signUp },
@@ -88,8 +90,8 @@ function messagingRoutes({
       handler(request, actor, request.params.roomId ?? ''),
     );
   return {
-    '/api/auth/refresh': { POST: guards.public(refresh.refresh) },
-    '/api/auth/sign-out': { POST: guards.public(signOut.signOut) },
+    '/api/auth/refresh': { POST: guards.session(refresh.refresh) },
+    '/api/auth/sign-out': { POST: guards.session(signOut.signOut) },
     '/api/keys/identity': { PUT: guards.authenticated(controller.publishIdentityKey) },
     '/api/rooms': {
       GET: guards.authenticated(controller.listRooms),

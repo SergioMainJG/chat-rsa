@@ -5,6 +5,7 @@
 export const STATUS_TEXT: Readonly<Record<number, string>> = {
   400: 'Bad Request',
   401: 'Unauthorized',
+  403: 'Forbidden',
   409: 'Conflict',
   415: 'Unsupported Media Type',
   429: 'Too Many Requests',

@@ -1,11 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  BEARER_PREFIX,
-  CloseCode,
-  type ServerFrame,
-  SOCKET_PROTOCOL,
-} from '../../../shared/contracts/messaging.socket.contract.ts';
+import { CloseCode, type ServerFrame, SOCKET_PROTOCOL } from '../../../shared/contracts/messaging.socket.contract.ts';
 import { FakeNetwork, FakeSocket, FakeTimers, settle } from './messaging.connection.test-support.ts';
 import { type ConnectionState, SocketConnection } from './messaging.connection.ts';
 
@@ -27,9 +22,12 @@ type Harness = {
   readonly timers: FakeTimers;
 };
 
-function setup(
-  options: { online?: boolean; refreshToken?: () => Promise<string>; token?: null | string } = {},
-): Harness {
+/** A session refresh that succeeds. */
+async function refreshed(): Promise<void> {
+  // The server would set fresh cookies and push auth.refreshed.
+}
+
+function setup(options: { online?: boolean; refreshSession?: () => Promise<void> } = {}): Harness {
   const sockets: FakeSocket[] = [];
   const frames: unknown[] = [];
   const states: ConnectionState[] = [];
@@ -41,13 +39,12 @@ function setup(
       sockets.push(socket);
       return socket;
     },
-    getToken: () => (options.token === undefined ? 'jwt-1' : options.token),
     network,
     now: () => NOW,
     onFrame: (frame) => frames.push(frame),
     onState: (state) => states.push(state),
     random: () => 0.5,
-    refreshToken: options.refreshToken ?? (async () => 'jwt-2'),
+    refreshSession: options.refreshSession ?? refreshed,
     timers,
     url: 'ws://localhost/ws',
   });
@@ -62,11 +59,11 @@ function setup(
 }
 
 describe('SocketConnection', () => {
-  test('connects with the chat subprotocol and the bearer token', () => {
+  test('connects with only the chat subprotocol: the session cookie authenticates it', () => {
     const { connection, last, states } = setup();
     connection.start();
     expect(last().url).toBe('ws://localhost/ws');
-    expect(last().protocols).toEqual([SOCKET_PROTOCOL, `${BEARER_PREFIX}jwt-1`]);
+    expect(last().protocols).toEqual([SOCKET_PROTOCOL]);
     expect(states).toEqual(['connecting']);
     last().open();
     expect(connection.state).toBe('open');
@@ -177,13 +174,6 @@ describe('SocketConnection', () => {
     expect(sockets).toHaveLength(1);
   });
 
-  test('a missing token enters unauthorized without opening a socket', () => {
-    const { connection, sockets } = setup({ token: null });
-    connection.start();
-    expect(sockets).toHaveLength(0);
-    expect(connection.state).toBe('unauthorized');
-  });
-
   test('close() stops for good: the socket closes normally and nothing reconnects', () => {
     const { connection, last, network, sockets, timers } = setup();
     connection.start();
@@ -199,17 +189,27 @@ describe('SocketConnection', () => {
     expect(connection.state).toBe('closed');
   });
 
-  test('schedules a refresh 60 s before expiry and sends auth.refresh with the new token', async () => {
-    const { connection, last, timers } = setup();
+  test('refreshes the session 60 s before expiry, sends no frame and waits for the pushed auth.refreshed', async () => {
+    let refreshes = 0;
+    const { connection, frames, last, timers } = setup({
+      refreshSession: async () => {
+        refreshes += 1;
+      },
+    });
     connection.start();
     last().open();
     last().receive(ready(new Date(NOW + 10 * 60_000).toISOString()));
     expect(timers.delays()).toEqual([9 * 60_000]);
     timers.runNext();
     await settle();
-    expect(last().sentFrames()).toEqual([{ token: 'jwt-2', type: 'auth.refresh' }]);
-    last().receive({ expiresAt: new Date(NOW + 5 * 60_000).toISOString(), type: 'auth.refreshed' });
+    expect(refreshes).toBe(1);
+    expect(last().sentFrames()).toEqual([]);
+    expect(timers.delays()).toEqual([]);
+    const pushed: ServerFrame = { expiresAt: new Date(NOW + 5 * 60_000).toISOString(), type: 'auth.refreshed' };
+    last().receive(pushed);
     expect(timers.delays()).toEqual([4 * 60_000]);
+    expect(frames.at(-1)).toEqual(pushed);
+    expect(connection.state).toBe('open');
   });
 
   test('a token that expires within 60 s is refreshed at once', () => {
@@ -222,7 +222,7 @@ describe('SocketConnection', () => {
 
   test('a rejected refresh enters unauthorized and closes the socket without reconnecting', async () => {
     const { connection, last, timers } = setup({
-      refreshToken: async () => {
+      refreshSession: async () => {
         throw new Error('refresh denied');
       },
     });

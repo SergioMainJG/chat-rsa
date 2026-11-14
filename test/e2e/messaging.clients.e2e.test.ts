@@ -10,17 +10,19 @@ import { createServer } from '../../src/backend/shared/http/app.server.ts';
 import { applyUserSchema } from '../../src/backend/user/infrastructure/user.schema.ts';
 import { Argon2PasswordHasher } from '../../src/backend/user/infrastructure/user.security.argon2.ts';
 import { JoseTokenIssuer } from '../../src/backend/user/infrastructure/user.security.jose.ts';
+import { hasLiveSession } from '../../src/frontend/auth/presentation/auth.view.ts';
 import { ChatController } from '../../src/frontend/messaging/application/chat.controller.ts';
 import {
   bootstrapSession,
   type ChatSession,
-  type TokenStore,
+  type SessionHint,
 } from '../../src/frontend/messaging/application/chat.session.ts';
 import { SocketConnection, type Timers } from '../../src/frontend/messaging/connection/messaging.connection.ts';
 import { InMemoryOutbox } from '../../src/frontend/messaging/connection/messaging.outbox.ts';
 import { InMemoryKeyStore } from '../../src/frontend/messaging/crypto/messaging.crypto.key-store.ts';
 import { InMemoryLocalMessageStore } from '../../src/frontend/messaging/search/messaging.search.ts';
 import { BEARER_PREFIX, SOCKET_PATH, SOCKET_PROTOCOL } from '../../src/shared/contracts/messaging.socket.contract.ts';
+import { bunWebSocket } from '../support/bun-websocket.test-support.ts';
 
 // Two real chat clients (session bootstrap, controller, socket connection and Web Crypto sender keys)
 // talking through the real server, the way two devices do.
@@ -33,13 +35,13 @@ type Client = {
 
 /**
  * One account on one device: what survives a sign-out on a real browser (the per-user key store and decrypted local
- * store in IndexedDB) and the token slot of `sessionStorage`.
+ * store in IndexedDB) and its cookie jar, where the server keeps the HttpOnly session cookie and its hint.
  */
 type Device = {
+  readonly cookies: Map<string, string>;
   readonly keyStore: InMemoryKeyStore;
   readonly name: string;
   readonly store: InMemoryLocalMessageStore;
-  readonly tokens: TokenStore;
 };
 
 /** What a person sees of one message; ids and times are compared separately. */
@@ -47,6 +49,8 @@ type Seen = Pick<MessageItem, 'id' | 'own' | 'sender' | 'status' | 'text' | 'und
 
 const PASSWORD = 'correct-Horse-battery-st4ple';
 const SECRET = 'e2e-clients-secret';
+/** The page's origin, as a browser sends it; the only one the server allows here. */
+const ORIGIN = 'http://localhost:3000';
 const config = loadConfig();
 const sql = createPostgresClient({ max: 4, url: config.databaseUrl });
 const cache = new RedisClient(config.cacheUrl);
@@ -84,7 +88,7 @@ beforeAll(async () => {
   await applyUserSchema(sql);
   const { auth, messaging } = composeApp({
     cache,
-    config: { jwtSecret: SECRET, rateLimit: config.rateLimit },
+    config: { ...config, appOrigins: [ORIGIN], jwtSecret: SECRET },
     hasher: new Argon2PasswordHasher(),
     logger: { error: (error) => console.error(error) },
     sql,
@@ -109,17 +113,42 @@ afterAll(async () => {
   cache.close();
 });
 
-async function authenticate(path: string, name: string): Promise<string> {
-  const response = await fetch(new URL(path, server.url), {
-    body: JSON.stringify({ name, password: PASSWORD }),
+/** What a browser does with `Set-Cookie`: keeps the value, or drops the cookie on `Max-Age=0`. */
+function keepCookies(jar: Map<string, string>, response: Response): void {
+  for (const cookie of response.headers.getSetCookie()) {
+    const [pair = ''] = cookie.split(';');
+    const [name = '', ...value] = pair.split('=');
+    if (/;\s*Max-Age=0\b/iu.test(cookie)) {
+      jar.delete(name);
+    } else {
+      jar.set(name, value.join('='));
+    }
+  }
+}
+
+/** A browser's same-origin request: the jar's cookies and the page's Origin go with it. */
+async function authenticate(path: string, device: Pick<Device, 'cookies' | 'name'>): Promise<void> {
+  const response = await browserFetch(device.cookies, path, {
+    body: JSON.stringify({ name: device.name, password: PASSWORD }),
     headers: { 'content-type': 'application/json' },
     method: 'POST',
   });
   const body: unknown = await response.json();
-  if (typeof body !== 'object' || body === null || !('token' in body) || typeof body.token !== 'string') {
+  if (!response.ok || typeof body !== 'object' || body === null || 'token' in body) {
     throw new Error(`${path} failed: ${response.status}`);
   }
-  return body.token;
+  if (!device.cookies.has('chat_rsa_session') || !device.cookies.has('chat_rsa_session_hint')) {
+    throw new Error(`${path} set no session cookies`);
+  }
+}
+
+async function browserFetch(jar: Map<string, string>, url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set('cookie', [...jar].map(([name, value]) => `${name}=${value}`).join('; '));
+  headers.set('origin', ORIGIN);
+  const response = await fetch(new URL(url, server.url), { ...init, headers });
+  keepCookies(jar, response);
+  return response;
 }
 
 async function eventually(check: () => boolean, what: string): Promise<void> {
@@ -133,35 +162,38 @@ async function eventually(check: () => boolean, what: string): Promise<void> {
   }
 }
 
-/** Creates an account on a fresh device; the device is signed in with its first token. */
 async function signIn(device: Device): Promise<void> {
-  device.tokens.set(await authenticate('/api/auth/sign-in', device.name));
+  await authenticate('/api/auth/sign-in', device);
 }
 
+/** Creates an account on a fresh device; the device is signed in by the cookies the server set. */
 async function signUp(prefix: string): Promise<Device> {
   const name = `${prefix}${crypto.randomUUID().slice(0, 8)}`;
   createdUsers.push(name);
-  let token: null | string = await authenticate('/api/auth/sign-up', name);
-  const tokens: TokenStore = {
-    clear: () => {
-      token = null;
-    },
-    get: () => token,
-    set: (next) => {
-      token = next;
-    },
+  const device = {
+    cookies: new Map<string, string>(),
+    keyStore: new InMemoryKeyStore(),
+    name,
+    store: new InMemoryLocalMessageStore(),
   };
-  return { keyStore: new InMemoryKeyStore(), name, store: new InMemoryLocalMessageStore(), tokens };
+  await authenticate('/api/auth/sign-up', device);
+  return device;
 }
 
 /** Opens the chat page on the device: bootstraps the session and builds the controller. */
 async function openChat(device: Device): Promise<Client> {
-  const { tokens } = device;
+  const { cookies } = device;
+  const hint: SessionHint = {
+    clear: () => {
+      cookies.delete('chat_rsa_session_hint');
+    },
+    isLive: () => hasLiveSession(cookies.get('chat_rsa_session_hint') ?? null, Date.now()),
+  };
   const result = await bootstrapSession({
-    fetch: async (url, init) => fetch(new URL(url, server.url), init),
+    fetch: async (url, init) => browserFetch(cookies, url, init),
+    hint,
     keyStoreFor: () => device.keyStore,
     navigate: ignore,
-    tokens,
   });
   if (result.kind !== 'ready') {
     throw new Error(`bootstrap ${result.kind}`);
@@ -173,7 +205,14 @@ async function openChat(device: Device): Promise<Client> {
     connect: ({ onFrame, onState }) =>
       new SocketConnection({
         createSocket: (url, protocols, listener) => {
-          const socket = new WebSocket(url, protocols);
+          // A browser sends the session cookie and the page's Origin with the upgrade.
+          const socket = bunWebSocket(url, {
+            headers: {
+              cookie: [...cookies].map(([name, value]) => `${name}=${value}`).join('; '),
+              origin: ORIGIN,
+            },
+            protocols,
+          });
           socket.addEventListener('open', () => {
             listener.onOpen();
           });
@@ -192,13 +231,12 @@ async function openChat(device: Device): Promise<Client> {
             },
           };
         },
-        getToken: () => tokens.get(),
         network: { isOnline: () => true, onChange: () => ignore },
         now: Date.now,
         onFrame,
         onState,
         random: Math.random,
-        refreshToken: session.refreshToken,
+        refreshSession: session.refreshSession,
         timers,
         url: socketUrl(),
       }),
@@ -324,7 +362,7 @@ describe('two chat clients through the real server', () => {
     expect(aliceBefore.map((item) => item.own)).toEqual(expectedTexts.map((_, index) => index % 2 === 0));
     expect(bobBefore.map((item) => item.own)).toEqual(expectedTexts.map((_, index) => index % 2 === 1));
 
-    const oldTokens = [aliceDevice.tokens.get(), bobDevice.tokens.get()];
+    const oldTokens = [aliceDevice.cookies.get('chat_rsa_session'), bobDevice.cookies.get('chat_rsa_session')];
     for (const [client, device] of [
       [alice, aliceDevice],
       [bob, bobDevice],
@@ -332,10 +370,11 @@ describe('two chat clients through the real server', () => {
       client.controller.stop();
       // eslint-disable-next-line no-await-in-loop -- each user signs out on their own device
       await client.session.signOut();
-      expect(device.tokens.get()).toBeNull();
+      // The server cleared both cookies.
+      expect([...device.cookies.keys()]).toEqual([]);
     }
     for (const token of oldTokens) {
-      if (token === null) {
+      if (token === undefined) {
         throw new Error('expected a signed-in token');
       }
       const headers = { authorization: `Bearer ${token}` };

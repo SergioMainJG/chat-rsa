@@ -16,9 +16,13 @@ export type KeyStore = {
   getIdentity: () => Promise<IdentityKeyPair | null>;
   /** The chain index this user's next message in the epoch must use, or null before the first one. */
   getNextChainIndex: (roomId: string, keyEpoch: number) => Promise<null | number>;
+  /** The identity public key (base64) pinned for another user on first sight (S5), or null. */
+  getPinnedKey: (userId: number) => Promise<null | string>;
   saveChainKey: (id: ChainKeyId, key: CryptoKey) => Promise<void>;
   saveIdentity: (identity: IdentityKeyPair) => Promise<void>;
   saveNextChainIndex: (roomId: string, keyEpoch: number, index: number) => Promise<void>;
+  /** Pins (or, when the user trusts a new key, re-pins) another user's identity public key. */
+  savePinnedKey: (userId: number, publicKeyBase64: string) => Promise<void>;
 };
 
 export const KEY_DATABASE = 'chat-rsa.keys';
@@ -32,6 +36,24 @@ const CHAIN_INDEXES = 'chainIndexes';
 const CHAIN_KEYS = 'chainKeys';
 const IDENTITY = 'identity';
 const IDENTITY_ID = 'self';
+const PINNED_KEYS = 'pinnedKeys';
+/** Version 2 added PINNED_KEYS. */
+const KEY_DATABASE_VERSION = 2;
+
+/** Every object store of the key database. */
+export const KEY_STORES: readonly string[] = [CHAIN_INDEXES, CHAIN_KEYS, IDENTITY, PINNED_KEYS];
+
+/** Creates the stores a database opened at an older version lacks; existing stores are kept. */
+export function upgradeKeyDatabase(database: {
+  readonly createObjectStore: (name: string) => unknown;
+  readonly objectStoreNames: Pick<DOMStringList, 'contains'>;
+}): void {
+  for (const store of KEY_STORES) {
+    if (!database.objectStoreNames.contains(store)) {
+      database.createObjectStore(store);
+    }
+  }
+}
 
 /* eslint-disable @typescript-eslint/require-await -- the in-memory adapter answers synchronously but must keep the async port shape */
 /** Keys in memory only: for tests, and for browsers without IndexedDB (lost on reload). */
@@ -39,6 +61,7 @@ export class InMemoryKeyStore implements KeyStore {
   private readonly chainIndexes = new Map<string, number>();
   private readonly chainKeys = new Map<string, CryptoKey>();
   private identity: IdentityKeyPair | null = null;
+  private readonly pinnedKeys = new Map<number, string>();
 
   async getChainKey(id: ChainKeyId): Promise<CryptoKey | null> {
     return this.chainKeys.get(chainKeyIdOf(id)) ?? null;
@@ -52,6 +75,10 @@ export class InMemoryKeyStore implements KeyStore {
     return this.chainIndexes.get(epochIdOf(roomId, keyEpoch)) ?? null;
   }
 
+  async getPinnedKey(userId: number): Promise<null | string> {
+    return this.pinnedKeys.get(userId) ?? null;
+  }
+
   async saveChainKey(id: ChainKeyId, key: CryptoKey): Promise<void> {
     this.chainKeys.set(chainKeyIdOf(id), key);
   }
@@ -62,6 +89,10 @@ export class InMemoryKeyStore implements KeyStore {
 
   async saveNextChainIndex(roomId: string, keyEpoch: number, index: number): Promise<void> {
     this.chainIndexes.set(epochIdOf(roomId, keyEpoch), index);
+  }
+
+  async savePinnedKey(userId: number, publicKeyBase64: string): Promise<void> {
+    this.pinnedKeys.set(userId, publicKeyBase64);
   }
 }
 /* eslint-enable @typescript-eslint/require-await */
@@ -90,6 +121,11 @@ export class IndexedDbKeyStore implements KeyStore {
     return typeof value === 'number' ? value : null;
   }
 
+  async getPinnedKey(userId: number): Promise<null | string> {
+    const value = await this.get(PINNED_KEYS, String(userId));
+    return typeof value === 'string' ? value : null;
+  }
+
   async saveChainKey(id: ChainKeyId, key: CryptoKey): Promise<void> {
     await this.put(CHAIN_KEYS, chainKeyIdOf(id), key);
   }
@@ -103,6 +139,10 @@ export class IndexedDbKeyStore implements KeyStore {
 
   async saveNextChainIndex(roomId: string, keyEpoch: number, index: number): Promise<void> {
     await this.put(CHAIN_INDEXES, epochIdOf(roomId, keyEpoch), index);
+  }
+
+  async savePinnedKey(userId: number, publicKeyBase64: string): Promise<void> {
+    await this.put(PINNED_KEYS, String(userId), publicKeyBase64);
   }
 
   private async get(store: string, key: string): Promise<unknown> {
@@ -143,11 +183,9 @@ function isIdentity(value: unknown): value is IdentityKeyPair {
 }
 
 async function openDatabase(factory: IDBFactory, name: string): Promise<IDBDatabase> {
-  const request = factory.open(name, 1);
+  const request = factory.open(name, KEY_DATABASE_VERSION);
   request.addEventListener('upgradeneeded', () => {
-    for (const store of [CHAIN_INDEXES, CHAIN_KEYS, IDENTITY]) {
-      request.result.createObjectStore(store);
-    }
+    upgradeKeyDatabase(request.result);
   });
   return requestResult(request);
 }

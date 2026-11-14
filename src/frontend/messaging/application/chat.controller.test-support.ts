@@ -10,6 +10,8 @@ import type { MessageItem, RoomHeader } from '../presentation/chat.view-model.ts
 
 import { FakeTimers } from '../connection/messaging.connection.test-support.ts';
 import { InMemoryOutbox } from '../connection/messaging.outbox.ts';
+import { InMemoryKeyStore } from '../crypto/messaging.crypto.key-store.ts';
+import { SenderKeySession } from '../crypto/messaging.crypto.session.ts';
 import { InMemoryLocalMessageStore } from '../search/messaging.search.ts';
 import { ChatApi } from './chat.api.ts';
 import {
@@ -23,6 +25,7 @@ export const SELF = { id: 1, name: 'alice' };
 
 export class RecordingView implements ChatView {
   header: null | RoomHeader = null;
+  keyWarnings: readonly string[] = [];
   messages: readonly MessageItem[] = [];
   readonly notices: string[] = [];
   search: readonly SearchResult[] = [];
@@ -35,6 +38,10 @@ export class RecordingView implements ChatView {
 
   renderConnection = (state: ConnectionState): void => {
     this.states.push(state);
+  };
+
+  renderKeyWarnings = (warnings: readonly string[]): void => {
+    this.keyWarnings = warnings;
   };
 
   renderMessages = (items: readonly MessageItem[]): void => {
@@ -62,6 +69,8 @@ export class RecordingView implements ChatView {
 export type ControllerHarness = {
   readonly connection: FakeConnection;
   readonly controller: ChatController;
+  /** This user's key store: identity key pins (S5) are checked against it. */
+  readonly keys: InMemoryKeyStore;
   readonly outbox: InMemoryOutbox;
   /** Every REST call, as `METHOD url`, in order. */
   readonly requests: string[];
@@ -176,7 +185,6 @@ export function controllerHarness(
       const body: unknown = typeof init.body === 'string' ? JSON.parse(init.body) : null;
       return routes[key]?.(body) ?? new Response(null, { status: 204 });
     },
-    getToken: () => 'jwt',
     onUnauthorized: () => {
       // Not exercised here; ChatApi tests cover 401s.
     },
@@ -186,6 +194,9 @@ export function controllerHarness(
   const store = new InMemoryLocalMessageStore();
   const timers = new FakeTimers();
   const view = new RecordingView();
+  const keys = new InMemoryKeyStore();
+  // Real pinning over the in-memory store; the doubles above stand in for wrapping and encrypting.
+  const pinning = new SenderKeySession(keys);
   let uuid = 0;
   const controller = new ChatController({
     api,
@@ -204,6 +215,8 @@ export function controllerHarness(
         keyEpoch,
       }),
       prepareEpoch: async () => [],
+      trustIdentityKeys: async (input) => pinning.trustIdentityKeys(input),
+      verifyIdentityKeys: async (input) => pinning.verifyIdentityKeys(input),
       ...options.crypto,
     },
     formatTime: (iso) => iso,
@@ -219,5 +232,5 @@ export function controllerHarness(
     user: SELF,
     view,
   });
-  return { connection, controller, outbox, requests, routes, store, timers, view };
+  return { connection, controller, keys, outbox, requests, routes, store, timers, view };
 }

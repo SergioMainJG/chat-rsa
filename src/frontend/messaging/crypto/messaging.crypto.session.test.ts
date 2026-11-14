@@ -267,3 +267,62 @@ describe('SenderKeySession.decrypt', () => {
     ).toBeNull();
   });
 });
+
+function pinMembers(keys: Record<number, string>): Array<{ publicKeyBase64: string; userId: number }> {
+  return Object.entries(keys).map(([userId, publicKeyBase64]) => ({ publicKeyBase64, userId: Number(userId) }));
+}
+
+describe('SenderKeySession identity key pinning (S5)', () => {
+  test('first sight pins every other member and reports no change', async () => {
+    const store = new InMemoryKeyStore();
+    const session = new SenderKeySession(store);
+
+    expect(
+      await session.verifyIdentityKeys({ members: pinMembers({ 1: 'own', 2: 'pk2', 3: 'pk3' }), selfId: ALICE }),
+    ).toEqual([]);
+
+    expect(await store.getPinnedKey(BOB)).toBe('pk2');
+    expect(await store.getPinnedKey(3)).toBe('pk3');
+  });
+
+  test('the same key passes and a different key is reported without replacing the pin', async () => {
+    const store = new InMemoryKeyStore();
+    const session = new SenderKeySession(store);
+    await session.verifyIdentityKeys({ members: pinMembers({ 2: 'pk2', 3: 'pk3' }), selfId: ALICE });
+
+    expect(await session.verifyIdentityKeys({ members: pinMembers({ 2: 'pk2', 3: 'pk3' }), selfId: ALICE })).toEqual(
+      [],
+    );
+    expect(await session.verifyIdentityKeys({ members: pinMembers({ 2: 'evil', 3: 'pk3' }), selfId: ALICE })).toEqual([
+      BOB,
+    ]);
+    expect(await store.getPinnedKey(BOB)).toBe('pk2');
+  });
+
+  test('the own key is never pinned nor compared', async () => {
+    const store = new InMemoryKeyStore();
+    const session = new SenderKeySession(store);
+    await store.savePinnedKey(ALICE, 'something else');
+
+    expect(await session.verifyIdentityKeys({ members: pinMembers({ 1: 'own' }), selfId: ALICE })).toEqual([]);
+    expect(await store.getPinnedKey(ALICE)).toBe('something else');
+    expect(
+      await new SenderKeySession(new InMemoryKeyStore()).verifyIdentityKeys({
+        members: pinMembers({ 1: 'own' }),
+        selfId: ALICE,
+      }),
+    ).toEqual([]);
+  });
+
+  test('trusting re-pins the new keys of other members only', async () => {
+    const store = new InMemoryKeyStore();
+    const session = new SenderKeySession(store);
+    await session.verifyIdentityKeys({ members: pinMembers({ 2: 'pk2' }), selfId: ALICE });
+
+    await session.trustIdentityKeys({ members: pinMembers({ 1: 'own', 2: 'new2' }), selfId: ALICE });
+
+    expect(await store.getPinnedKey(BOB)).toBe('new2');
+    expect(await store.getPinnedKey(ALICE)).toBeNull();
+    expect(await session.verifyIdentityKeys({ members: pinMembers({ 2: 'new2' }), selfId: ALICE })).toEqual([]);
+  });
+});
