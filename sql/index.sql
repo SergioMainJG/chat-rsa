@@ -115,12 +115,21 @@ BEGIN
   END IF;
 END $$;
 
--- Defense in depth: only current members can write to a room.
+-- Defense in depth: only current members can write to a room, and only under its current key
+-- epoch. FOR SHARE makes a concurrent join/leave (which updates the room row) wait for this
+-- insert, so an epoch cannot rotate between the check and the commit.
 CREATE OR REPLACE FUNCTION messages_assert_sender_is_member() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  current_epoch INTEGER;
 BEGIN
+  SELECT key_epoch INTO current_epoch FROM rooms WHERE id = NEW.room_id FOR SHARE;
   IF NOT EXISTS (SELECT 1 FROM room_members WHERE room_id = NEW.room_id AND user_id = NEW.sender_id) THEN
     RAISE EXCEPTION 'user % is not a member of room %', NEW.sender_id, NEW.room_id
       USING ERRCODE = '42501';
+  END IF;
+  IF NEW.key_epoch <> current_epoch THEN
+    RAISE EXCEPTION 'key epoch % is stale for room %', NEW.key_epoch, NEW.room_id
+      USING ERRCODE = '23514', CONSTRAINT = 'messages_current_key_epoch', DETAIL = current_epoch::text;
   END IF;
   RETURN NEW;
 END $$;

@@ -38,10 +38,12 @@ afterAll(async () => {
   await sql.close();
 });
 
+/** Writes under the room's current key epoch, as the sender-is-member trigger requires. */
 async function insertMessage(senderIndex: number, idempotencyKey: string, chainIndex = 0): Promise<unknown[]> {
   return db<unknown[]>`
     INSERT INTO messages (room_id, sender_id, idempotency_key, key_epoch, chain_index, ciphertext, iv, auth_tag)
-    VALUES (${ROOM}, ${user(senderIndex)}, ${idempotencyKey}, 2, ${chainIndex}, ${new Uint8Array([1])}, ${IV}, ${TAG})
+    VALUES (${ROOM}, ${user(senderIndex)}, ${idempotencyKey}, (SELECT key_epoch FROM rooms WHERE id = ${ROOM}),
+            ${chainIndex}, ${new Uint8Array([1])}, ${IV}, ${TAG})
     ON CONFLICT (sender_id, idempotency_key) DO NOTHING
     RETURNING id
   `;
@@ -167,7 +169,8 @@ describe('messaging schema', () => {
   test('message iv sizes are bounded', async () => {
     const message = await rejectionOf(
       db`INSERT INTO messages (room_id, sender_id, idempotency_key, key_epoch, chain_index, ciphertext, iv, auth_tag)
-         VALUES (${ROOM}, ${user(0)}, ${crypto.randomUUID()}, 2, 99, ${new Uint8Array([1])}, ${new Uint8Array(11)}, ${TAG})`,
+         VALUES (${ROOM}, ${user(0)}, ${crypto.randomUUID()}, (SELECT key_epoch FROM rooms WHERE id = ${ROOM}), 99,
+                 ${new Uint8Array([1])}, ${new Uint8Array(11)}, ${TAG})`,
     );
     expect(message).toContain('messages_iv_len');
   });

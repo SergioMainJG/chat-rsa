@@ -9,3 +9,8 @@ export function err<E>(error: E): Result<never, E> {
 export function ok<T>(value: T): Result<T, never> {
   return { ok: true, value };
 }
+
+/** Success without a value, for guards. */
+export function okVoid(): Result<void, never> {
+  return { ok: true, value: undefined };
+}

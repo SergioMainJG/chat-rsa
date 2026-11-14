@@ -490,7 +490,7 @@ rules = {
 
 # k6 provides the `k6/*` modules at run time; only their types are installed (@types/k6, dev).
 [[lint.overrides]]
-files = ["test/load/auth.load.ts"]
+files = ["test/load/*.load.ts"]
 rules = {
   "import/no-extraneous-dependencies" = "off",
 }

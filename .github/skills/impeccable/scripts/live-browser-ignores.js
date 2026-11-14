@@ -31,6 +31,10 @@
  * Kept separate from live-browser.js so the glob and page-scope logic can be unit tested in Node
  * (tests/live-browser-ignores.test.mjs) without the full overlay UI bundle.
  */
+// @ts-nocheck
+
+// 
+
 (function (root) {
   'use strict';
   if (!root) {

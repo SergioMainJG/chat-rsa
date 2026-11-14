@@ -1,9 +1,15 @@
 // Browser entry of the auth pages: the only JS on them. Native validation runs first (the submit
 // event fires only for a valid form); the API accepts JSON only, so the form is sent with fetch.
+import { enforceAccess, revealPage, TOKEN_KEY } from './auth.page-guard.ts';
 import { credentialsFrom, GENERIC_ERROR, outcomeOf } from './presentation/auth.view.ts';
 
-const TOKEN_KEY = 'chat-rsa.token';
 const REQUEST_TIMEOUT_MS = 15_000;
+
+// A signed-in user has no business on the auth pages: they are sent to the chat before the page is
+// ever shown, and `replace` keeps the auth page out of the history.
+if (enforceAccess('guests')) {
+  revealPage();
+}
 
 function clearMessages(form: HTMLFormElement): void {
   for (const field of fieldNames(form)) {
@@ -76,7 +82,7 @@ async function submit(form: HTMLFormElement): Promise<void> {
     const outcome = await outcomeOf(response);
     if (outcome.kind === 'success') {
       sessionStorage.setItem(TOKEN_KEY, outcome.session.token);
-      location.assign('/');
+      location.assign(outcome.redirectTo);
       return;
     }
     for (const [field, message] of Object.entries(outcome.fieldErrors)) {

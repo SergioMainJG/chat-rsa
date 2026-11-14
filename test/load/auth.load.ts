@@ -4,13 +4,18 @@
 import type { Options, Scenario } from 'k6/options';
 
 import { check } from 'k6';
+import { b64decode } from 'k6/encoding';
 import { scenario } from 'k6/execution';
 import {
+  batch,
   expectedStatuses,
   post as httpPost,
   type RefinedResponse,
   type ResponseType,
 } from 'k6/http';
+import { Counter } from 'k6/metrics';
+
+import { STATUS_TEXT } from './support/error-format.ts';
 
 /** K6 injects this global; declared here because tsconfig only loads Bun's global types. */
 // eslint-disable-next-line no-underscore-dangle -- `__ENV` is the name k6 itself gives this global
@@ -33,6 +38,9 @@ if (!/^[0-9a-z]{8,}$/u.test(RUN_ID)) {
  */
 const NAME_PREFIX = `load${RUN_ID}`;
 const JWT_SEGMENT = /^[\w-]+$/u;
+/** Requests in the stress burst: past the server's default IP bucket (120), which guards sign-in. */
+const RATE_LIMIT_BURST = Number(__ENV.RATE_LIMIT_BURST ?? 200);
+const rateLimited = new Counter('rate_limited');
 
 type Scenarios = Readonly<Record<string, Scenario>>;
 
@@ -84,6 +92,8 @@ const PROFILES: Readonly<Record<string, Scenarios>> = {
   // A 30-VU burst with no pacing: it measures how the server degrades past capacity. Its latency
   // threshold is the same as sign-in's, so a saturated server fails this profile on purpose.
   stress: {
+    // One burst of invalid sign-ins (400, no argon2 cost) that must be shed with 429.
+    rate_limit: { exec: 'rateLimit', executor: 'shared-iterations', iterations: 1, vus: 1 },
     rejections: { exec: 'rejections', executor: 'shared-iterations', iterations: 5, vus: 1 },
     spike: {
       exec: 'spike',
@@ -104,6 +114,7 @@ if (!scenarios) {
 }
 
 const LATENCY_P95_MS: Readonly<Record<string, number>> = {
+  rate_limit: 800,
   rejections: 500,
   sign_in: 800,
   sign_up: 1000,
@@ -116,6 +127,7 @@ export const options: Options = {
     checks: ['rate>0.99'],
     // Each request declares its own expected statuses, so a 401 on a valid sign-in is a failure.
     http_req_failed: ['rate<0.01'],
+    ...('rate_limit' in scenarios && { rate_limited: ['count>0'] }),
     ...Object.fromEntries(
       Object.keys(scenarios).map((name) => [
         `http_req_duration{scenario:${name}}`,
@@ -125,7 +137,11 @@ export const options: Options = {
   },
 };
 
-type PoolData = { readonly pool: readonly string[] };
+type PoolData = {
+  /** Digits unique to this attempt, so a retry with the same RUN_ID signs up new names. */
+  readonly attempt: string;
+  readonly pool: readonly string[];
+};
 
 function bodyOf(response: RefinedResponse<ResponseType>): unknown {
   try {
@@ -144,7 +160,39 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null;
 }
 
-/** `{ user: { id, name }, token }` served as JSON, with a positive integer id and a three-part JWT. */
+/** The decoded JSON of one base64url JWT segment, or null when it is not a JSON object. */
+function jwtPart(segment: string | undefined): null | Readonly<Record<string, unknown>> {
+  if (segment === undefined || !JWT_SEGMENT.test(segment)) {
+    return null;
+  }
+  try {
+    const value: unknown = JSON.parse(b64decode(segment, 'rawurl', 's'));
+    return isRecord(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A token the messaging endpoints accept (they verify it with JoseTokenVerifier): HS256, `sub` is
+ * the user id, `name` is the user name and `exp` is a time in the future.
+ */
+function hasUsableClaims(token: string, id: number, name: string): boolean {
+  const segments = token.split('.');
+  const header = jwtPart(segments[0]);
+  const payload = jwtPart(segments[1]);
+  return (
+    segments.length === 3 &&
+    JWT_SEGMENT.test(segments[2] ?? '') &&
+    header?.alg === 'HS256' &&
+    payload?.sub === String(id) &&
+    payload.name === name &&
+    typeof payload.exp === 'number' &&
+    payload.exp * 1000 > Date.now()
+  );
+}
+
+/** `{ user: { id, name }, token }` served as JSON, with a positive integer id and usable claims. */
 function isAuthResponse(response: RefinedResponse<ResponseType>, name: string): boolean {
   const body = bodyOf(response);
   if (
@@ -156,18 +204,43 @@ function isAuthResponse(response: RefinedResponse<ResponseType>, name: string): 
     return false;
   }
   const { id } = body.user;
-  const segments = body.token.split('.');
   return (
     typeof id === 'number' &&
     Number.isInteger(id) &&
     id > 0 &&
     body.user.name === name &&
-    segments.length === 3 &&
-    segments.every((segment) => JWT_SEGMENT.test(segment))
+    hasUsableClaims(body.token, id, name)
   );
 }
 
-/** The shared error format: every field present, the request's own path and an ISO timestamp. */
+/** An exact ISO 8601 instant; a malformed value is a failed check, never a thrown RangeError. */
+function isIsoTimestamp(value: unknown): boolean {
+  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) {
+    return false;
+  }
+  return new Date(value).toISOString() === value;
+}
+
+/** Each field error of a 400 names its field and says what is wrong with it. */
+function hasFieldErrors(errors: unknown): boolean {
+  return (
+    Array.isArray(errors) &&
+    errors.length > 0 &&
+    errors.every(
+      (item: unknown) =>
+        isRecord(item) &&
+        typeof item.field === 'string' &&
+        item.field.length > 0 &&
+        typeof item.message === 'string' &&
+        item.message.length > 0,
+    )
+  );
+}
+
+/**
+ * The shared error format: every field present, the exact status title, the request's own path, an
+ * ISO timestamp and, on a 400, the field errors.
+ */
 function hasErrorShape(
   response: RefinedResponse<ResponseType>,
   statusCode: number,
@@ -184,12 +257,11 @@ function hasErrorShape(
     body.path === path &&
     typeof correlationId === 'string' &&
     correlationId.length > 0 &&
-    typeof error === 'string' &&
-    error.length > 0 &&
+    error === STATUS_TEXT[statusCode] &&
+    (statusCode !== 400 || hasFieldErrors(body.errors)) &&
     typeof message === 'string' &&
     message.length > 0 &&
-    typeof timestamp === 'string' &&
-    new Date(timestamp).toISOString() === timestamp
+    isIsoTimestamp(timestamp)
   );
 }
 
@@ -225,7 +297,9 @@ export function setup(): PoolData {
       );
     }
   }
-  return { pool };
+  // Digits only: sign-ups stay `<prefix>u<digits>`, inside the cleanup pattern.
+  const attempt = String(Math.floor(Math.random() * 1e6)).padStart(6, '0');
+  return { attempt, pool };
 }
 
 export function signIn(data: PoolData): void {
@@ -237,8 +311,8 @@ export function signIn(data: PoolData): void {
   });
 }
 
-export function signUp(): void {
-  const name = `${NAME_PREFIX}u${scenario.iterationInTest}`;
+export function signUp(data: PoolData): void {
+  const name = `${NAME_PREFIX}u${data.attempt}${scenario.iterationInTest}`;
   const response = post('/api/auth/sign-up', { name, password: PASSWORD }, [201]);
   check(response, {
     'sign-up returns {user, token}': (r) => isAuthResponse(r, name),
@@ -267,6 +341,39 @@ export function rejections(data: PoolData): void {
   check(invalid, { 'invalid credentials are 400': (r) => hasErrorShape(r, 400, path) });
   check(wrongMediaType, { 'text/plain is 415': (r) => hasErrorShape(r, 415, path) });
   unknownUserSignIn();
+}
+
+/** A 429 says when to retry: an integer number of seconds, at least 1. */
+function hasRetryAfter(response: RefinedResponse<ResponseType>): boolean {
+  const value = response.headers['Retry-After'] ?? '';
+  return /^[1-9][0-9]*$/u.test(value);
+}
+
+/** A burst past the IP bucket: every 429 must carry Retry-After and the shared error format. */
+export function rateLimit(): void {
+  const path = '/api/auth/sign-in';
+  const body = JSON.stringify({ name: 'has space', password: 'password' });
+  const responses = batch(
+    Array.from({ length: RATE_LIMIT_BURST }, () => ({
+      body,
+      method: 'POST',
+      params: {
+        headers: { 'content-type': 'application/json' },
+        responseCallback: expectedStatuses(400, 429),
+        tags: { name: path },
+      },
+      url: `${BASE_URL}${path}`,
+    })),
+  );
+  for (const response of responses) {
+    if (response.status === 429) {
+      rateLimited.add(1);
+      check(response, {
+        'rate limit is 429 with Retry-After': (r) =>
+          hasRetryAfter(r) && hasErrorShape(r, 429, path),
+      });
+    }
+  }
 }
 
 /** Burst traffic: alternating known sign-ins and unknown names, both one argon2 operation each. */

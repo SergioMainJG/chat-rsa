@@ -4,6 +4,10 @@
  * Kept separate from live-browser.js so future browser script parts can share chrome mounting,
  * lookup, focus, and picker helpers without depending on the full overlay UI bundle.
  */
+// @ts-nocheck
+
+// 
+
 (function (root) {
   'use strict';
   if (!root) {

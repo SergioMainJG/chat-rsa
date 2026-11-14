@@ -29,6 +29,15 @@ export class ConflictError extends AppError {
   }
 }
 
+export class ForbiddenError extends AppError {
+  readonly statusCode = 403;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ForbiddenError';
+  }
+}
+
 export class InternalServerError extends AppError {
   readonly statusCode = 500;
 
@@ -44,6 +53,18 @@ export class NotFoundError extends AppError {
   constructor(message: string) {
     super(message);
     this.name = 'NotFoundError';
+  }
+}
+
+export class TooManyRequestsError extends AppError {
+  readonly statusCode = 429;
+
+  constructor(
+    message: string,
+    readonly retryAfterSeconds: number,
+  ) {
+    super(message);
+    this.name = 'TooManyRequestsError';
   }
 }
 

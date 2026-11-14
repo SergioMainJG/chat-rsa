@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-guard="pending">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sign in · chat-rsa</title>
+    <!-- Route guard (auth.page-guard.ts): inline so it applies before the first paint in every
+         browser, without waiting for a stylesheet. The script removes data-guard to reveal. -->
+    <style>
+      html[data-guard='pending'] body {
+        visibility: hidden;
+      }
+      @media (scripting: none) {
+        html[data-guard='pending'] body {
+          visibility: visible;
+        }
+      }
+    </style>
     <link rel="stylesheet" href="../styles.css" />
     <link rel="stylesheet" href="./auth.css" />
     <script type="module" src="./auth.form.ts"></script>

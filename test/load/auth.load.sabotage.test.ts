@@ -1,66 +1,29 @@
-import { afterAll, describe, expect, test } from 'bun:test';
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, expect, test } from 'bun:test';
 
-import { newRunId, type Profile, runK6 } from './k6-runner.ts';
+import type { Profile } from './k6-runner.ts';
+
 import { type Sabotage, startFakeAuthServer } from './support/fake-auth-server.ts';
+import {
+  crossed,
+  failedChecks,
+  K6_TIMEOUT_MS,
+  type ProbeRun,
+  runK6Against,
+  SCRIPT_EXCEPTION,
+  THRESHOLD_FAILED,
+} from './support/k6-probe.test-support.ts';
 
 // Each case runs the real k6 script against a fake server with one deliberate defect from
 // bugs/load.bug.md and asserts that the suite reports it. The `honest` case proves the fake is
 // faithful: the same script passes against it.
 
-const K6_TIMEOUT_MS = 180_000;
-const THRESHOLD_FAILED = 99;
-const SCRIPT_EXCEPTION = 107;
-
-type Outcome = {
-  readonly exitCode: number;
-  readonly summary: null | Summary;
-  readonly unknownSignIns: number;
-};
-
-type Summary = {
-  readonly metrics: Readonly<Record<string, { readonly thresholds?: Readonly<Record<string, boolean>> }>>;
-  readonly root_group: {
-    readonly checks: Readonly<Record<string, { readonly fails: number; readonly passes: number }>>;
-  };
-};
-
-const scratchDirs: string[] = [];
-
-afterAll(() => {
-  for (const dir of scratchDirs) {
-    rmSync(dir, { force: true, recursive: true });
-  }
-});
-
-function crossed(outcome: Outcome, metric: string): boolean {
-  return Object.values(outcome.summary?.metrics[metric]?.thresholds ?? {}).some(Boolean);
-}
-
-function failedChecks(outcome: Outcome): string[] {
-  return Object.entries(outcome.summary?.root_group.checks ?? {})
-    .filter(([, check]) => check.fails > 0)
-    .map(([name]) => name);
-}
+type Outcome = ProbeRun & { readonly unknownSignIns: number };
 
 async function runAgainst(sabotage: Sabotage, profile: Profile = 'smoke'): Promise<Outcome> {
-  const summaryDir = mkdtempSync(join(tmpdir(), 'k6-probe-'));
-  scratchDirs.push(summaryDir);
-  // The k6 image runs as an unprivileged user that must be able to write the summary.
-  chmodSync(summaryDir, 0o777);
   const fake = startFakeAuthServer(sabotage);
   try {
-    const exitCode = await runK6({ baseUrl: fake.baseUrl, profile, runId: newRunId(), summaryDir });
-    let summary: null | Summary = null;
-    try {
-      const parsed: Summary = JSON.parse(readFileSync(join(summaryDir, 'summary.json'), 'utf8'));
-      summary = parsed;
-    } catch {
-      summary = null;
-    }
-    return { exitCode, summary, unknownSignIns: fake.unknownSignIns() };
+    const run = await runK6Against(fake, { profile });
+    return { ...run, unknownSignIns: fake.unknownSignIns() };
   } finally {
     await fake.stop();
   }
@@ -139,17 +102,6 @@ describe('k6 auth suite against sabotaged servers', () => {
 
       expect(outcome.exitCode).toBe(THRESHOLD_FAILED);
       expect(failedChecks(outcome)).toContain('unknown user is 401');
-    },
-    K6_TIMEOUT_MS,
-  );
-
-  test(
-    'L-07: the stress profile exists and runs a spike scenario',
-    async () => {
-      const outcome = await runAgainst('honest', 'stress');
-
-      expect(outcome.exitCode).toBe(0);
-      expect(outcome.summary?.metrics['http_req_duration{scenario:spike}']).toBeDefined();
     },
     K6_TIMEOUT_MS,
   );

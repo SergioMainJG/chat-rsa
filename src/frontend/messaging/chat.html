@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en" data-guard="pending">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chat · chat-rsa</title>
+    <!-- Route guard (auth.page-guard.ts): inline so it applies before the first paint in every
+         browser, without waiting for a stylesheet. The script removes data-guard to reveal. -->
+    <style>
+      html[data-guard='pending'] body {
+        visibility: hidden;
+      }
+      @media (scripting: none) {
+        html[data-guard='pending'] body {
+          visibility: visible;
+        }
+      }
+    </style>
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="./chat.css" />
+    <script type="module" src="./chat.page.ts"></script>
+  </head>
+  <body class="chat-body">
+    <div class="chat">
+      <header class="chat-header">
+        <h1><a href="/">chat-rsa</a></h1>
+        <p class="banner" role="status" data-connection-banner data-state="connecting"></p>
+        <a class="banner-action" href="/sign-in" data-sign-in-link hidden>Sign in</a>
+        <button type="button" class="sign-out" data-sign-out>Sign out</button>
+      </header>
+
+      <aside class="sidebar" aria-label="Rooms">
+        <h2>Rooms</h2>
+        <ul class="rooms" data-rooms></ul>
+        <p class="hint rooms-empty">No rooms yet. Create one below.</p>
+
+        <details class="panel">
+          <summary>New room</summary>
+          <form class="stack" data-create-room-form>
+            <fieldset>
+              <div class="field">
+                <label for="room-name">Room name</label>
+                <input
+                  id="room-name"
+                  name="name"
+                  type="text"
+                  required
+                  maxlength="100"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="field">
+                <label for="room-members">Members</label>
+                <input
+                  id="room-members"
+                  name="members"
+                  type="text"
+                  required
+                  pattern="[\p{L}\p{N}]+(?:[\s,]+[\p{L}\p{N}]+)*[\s,]*"
+                  autocomplete="off"
+                  autocapitalize="none"
+                  spellcheck="false"
+                  aria-describedby="room-members-hint"
+                />
+                <p class="hint" id="room-members-hint">
+                  User names, separated by commas or spaces.
+                </p>
+              </div>
+              <p class="form-message" role="alert" data-form-message></p>
+              <button type="submit">Create room</button>
+            </fieldset>
+          </form>
+        </details>
+
+        <search class="panel">
+          <form class="stack" data-search-form>
+            <div class="field">
+              <label for="search-query">Search messages</label>
+              <input
+                id="search-query"
+                name="query"
+                type="search"
+                autocomplete="off"
+                aria-describedby="search-hint"
+              />
+              <p class="hint" id="search-hint">Searches only messages decrypted on this device.</p>
+            </div>
+          </form>
+          <ol class="search-results" data-search-results aria-label="Search results"></ol>
+          <p class="hint search-empty" data-search-empty hidden>
+            No matching messages on this device.
+          </p>
+        </search>
+      </aside>
+
+      <main class="room" data-room-panel hidden>
+        <header class="room-header">
+          <h2 data-room-name></h2>
+          <ul class="members" data-members aria-label="Members"></ul>
+          <details class="panel room-actions">
+            <summary>Manage room</summary>
+            <form class="stack" data-add-member-form>
+              <fieldset>
+                <div class="field">
+                  <label for="member-name">Add member</label>
+                  <input
+                    id="member-name"
+                    name="name"
+                    type="text"
+                    required
+                    maxlength="64"
+                    pattern="[\p{L}\p{N}]+"
+                    autocomplete="off"
+                    autocapitalize="none"
+                    spellcheck="false"
+                  />
+                </div>
+                <p class="form-message" role="alert" data-form-message></p>
+                <button type="submit">Add</button>
+              </fieldset>
+            </form>
+            <button type="button" class="danger" data-leave-room>Leave room</button>
+          </details>
+        </header>
+
+        <div class="messages-scroller" data-messages-scroller>
+          <button type="button" class="load-older" data-load-older>Load older messages</button>
+          <ol class="messages" role="log" aria-label="Messages" data-messages></ol>
+          <p class="hint messages-empty">No messages yet. Say hello.</p>
+        </div>
+
+        <p class="typing" data-typing></p>
+
+        <form class="composer" data-composer>
+          <label class="visually-hidden" for="composer-text">Message</label>
+          <textarea
+            id="composer-text"
+            name="text"
+            rows="2"
+            required
+            maxlength="4000"
+            placeholder="Write a message. Enter sends, Shift+Enter adds a line."
+            autocomplete="off"
+          ></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </main>
+
+      <section class="room-placeholder" data-room-placeholder>
+        <p>Choose a room, or create one, to start chatting.</p>
+      </section>
+
+      <p class="notice" role="status" data-notice></p>
+    </div>
+
+    <template data-message-template>
+      <li class="message">
+        <p class="message-meta">
+          <span class="message-sender"></span> <time class="message-time"></time>
+        </p>
+        <p class="message-text"></p>
+        <p class="message-status"><span class="message-status-label"></span></p>
+      </li>
+    </template>
+  </body>
+</html>

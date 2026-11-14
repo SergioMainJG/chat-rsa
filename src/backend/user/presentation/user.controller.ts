@@ -1,15 +1,20 @@
-import type { AuthResponse } from '../../../shared/contracts/auth.contract.ts';
+import type { AuthResponse, PublicUser } from '../../../shared/contracts/auth.contract.ts';
 import type { Logger } from '../../shared/domain/logger.ts';
 import type { Result } from '../../shared/domain/result.ts';
 import type { CredentialsInput } from '../application/user.credentials.ts';
+import type { UserId } from '../domain/user.value-objects.ts';
 
 import {
   AppError,
   BadRequestError,
   InternalServerError,
+  UnauthorizedError,
   UnsupportedMediaTypeError,
 } from '../../shared/domain/app.error.ts';
 import { errorResponse } from '../../shared/http/http.error-response.ts';
+import { bearerTokenOf } from '../../shared/http/http.guard.ts';
+import { readQuery } from '../../shared/http/http.json-body.ts';
+import { respond, resultResponse } from '../../shared/http/http.respond.ts';
 
 export type AuthController = {
   readonly signIn: (request: Request) => Promise<Response>;
@@ -18,6 +23,33 @@ export type AuthController = {
 
 export type AuthUseCase = {
   execute: (input: CredentialsInput) => Promise<Result<AuthResponse, AppError>>;
+};
+
+export type LookupUserPort = {
+  execute: (rawName: unknown) => Promise<Result<PublicUser, AppError>>;
+};
+
+export type RefreshController = {
+  /** `POST /api/auth/refresh` with `Authorization: Bearer <jwt>`; answers `{ user, token }`. */
+  readonly refresh: (request: Request) => Promise<Response>;
+};
+
+export type RefreshPort = {
+  execute: (token: string) => Promise<Result<AuthResponse, AppError>>;
+};
+
+export type SignOutController = {
+  /** `POST /api/auth/sign-out` with `Authorization: Bearer <jwt>`: 204, and the session is over. */
+  readonly signOut: (request: Request) => Promise<Response>;
+};
+
+export type SignOutPort = {
+  execute: (token: string) => Promise<Result<null, AppError>>;
+};
+
+export type UserController = {
+  /** `GET /api/users/:name` for a signed-in user; answers `{ id, name }`. */
+  readonly lookup: (request: Request, actor: UserId, name: string) => Promise<Response>;
 };
 
 /**
@@ -65,6 +97,49 @@ export function createAuthController(
       handle({ logger, request, successStatus: 200, useCase: useCases.signIn }),
     signUp: async (request) =>
       handle({ logger, request, successStatus: 201, useCase: useCases.signUp }),
+  };
+}
+
+/** Token refresh lives beside sign-in and sign-up; it reads no body, only the bearer token. */
+export function createRefreshController(useCase: RefreshPort, logger: Logger): RefreshController {
+  return {
+    refresh: async (request) =>
+      respond(request, logger, async () => {
+        const token = bearerTokenOf(request);
+        if (token === null) {
+          throw new UnauthorizedError('Missing or invalid token');
+        }
+        return resultResponse(request, await useCase.execute(token));
+      }),
+  };
+}
+
+export function createSignOutController(useCase: SignOutPort, logger: Logger): SignOutController {
+  return {
+    signOut: async (request) =>
+      respond(request, logger, async () => {
+        const token = bearerTokenOf(request);
+        if (token === null) {
+          throw new UnauthorizedError('Missing or invalid token');
+        }
+        const result = await useCase.execute(token);
+        return result.ok
+          ? new Response(null, { status: 204 })
+          : errorResponse(request, result.error);
+      }),
+  };
+}
+
+export function createUserController(
+  useCases: { readonly lookup: LookupUserPort },
+  logger: Logger,
+): UserController {
+  return {
+    lookup: async (request, _actor, name) =>
+      respond(request, logger, async () => {
+        readQuery(new URL(request.url), []);
+        return resultResponse(request, await useCases.lookup.execute(name));
+      }),
   };
 }
 
