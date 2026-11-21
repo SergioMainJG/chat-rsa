@@ -39,6 +39,10 @@ Host ports default to 3001, 5433, and 6380 so they don't collide with other proj
 
 `sql/` is mounted into Postgres' `docker-entrypoint-initdb.d`, which only runs on an empty volume, so `main.ts` also applies `sql/index.sql` (idempotent `IF NOT EXISTS`) at startup. Sign-in tokens are HS256 JWTs signed with `JWT_SECRET`, which is required and must be at least 32 characters (put it in `.env`); there is no dev default, and only `NODE_ENV=test` (set by `bun test`) falls back to a test-only secret when it is unset. Otherwise `loadConfig` throws `JWT_SECRET must be set to at least 32 characters`.
 
+## Production image
+
+`Containerfile` (with `.containerignore`) builds the server image on `oven/bun:<BUN_VERSION>-alpine` (build arg, default `1.4.4`): `podman build --platform linux/amd64 -t chat-rsa .`. It runs from source as the unprivileged `bun` user with `NODE_ENV=production` and `PORT=3000`, because production bundles `src/frontend` with `Bun.build` at startup, serves `public/` and applies `sql/index.sql`; Postgres and Valkey are not in it. `CMD` uses exec form so Bun is PID 1 and gets SIGTERM for the graceful shutdown. Runtime env: `JWT_SECRET` (required), `DATABASE_URL`, `VALKEY_URL`, and `APP_ORIGINS` with the public URL first. The local pod still uses upstream images only.
+
 ## Architecture
 
 Screaming + Clean architecture: features at the top level, Clean layers inside each feature, and files named `<feature>.<responsibility>.ts`.
