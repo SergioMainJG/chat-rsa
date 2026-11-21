@@ -3,26 +3,37 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A new push to a pull request cancels its running run. On main and tags a running run is never
+  # cancelled, but GitHub keeps one pending run per group: a newer push replaces a queued one, so
+  # a commit pushed in between may get no `sha-<short>` image (`main` and `latest` stay current).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# The jobs only read the repository; nothing they run gets a token that can write.
+# The jobs only read the repository; only `publish` gets a token that can write, and only to
+# packages.
 permissions:
   contents: read
 
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+# Third-party actions are pinned to a full commit SHA (a tag can be moved); the comment names the
+# release.
 jobs:
   quality:
     name: Format, lint, typecheck, unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Don't leave the token in .git/config for the code the job runs afterwards.
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           # bun lint / bun fmt are canary-only for now; move to "latest" once they ship in stable.
           bun-version: canary
@@ -36,6 +47,7 @@ jobs:
     name: Integration and e2e tests
     needs: quality
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:18-alpine
@@ -55,13 +67,131 @@ jobs:
       DATABASE_URL: postgres://chat:chat@localhost:5432/chat
       VALKEY_URL: redis://localhost:6379
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Don't leave the token in .git/config for the code the job runs afterwards.
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: canary
       - run: bun install --frozen-lockfile
       - run: bun run test:integration
       - run: bun run test:e2e
+
+  # Pull requests: builds the Containerfile and boots the image against real Postgres and Valkey, so
+  # a broken image fails the pull request instead of the deploy. Pushes run the same check in
+  # `publish`, on the exact image they publish.
+  image:
+    name: Build and smoke-test the image
+    if: github.event_name == 'pull_request'
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: chat
+          POSTGRES_PASSWORD: chat
+          POSTGRES_DB: chat
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U chat" --health-interval 5s --health-timeout 5s --health-retries 10
+      valkey:
+        image: valkey/valkey:9.2-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64
+          load: true
+          tags: chat-rsa:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - run: .github/scripts/image-smoke.sh chat-rsa:ci
+
+  # Pushes to main and version tags, never pull requests. The image is built once and pushed by
+  # digest only (no tag points at it yet), that exact digest is smoke-tested, and only then does
+  # it get its tags. Nothing is rebuilt after the test, so the published bytes are the tested
+  # bytes, with their provenance and SBOM. A failed test leaves an untagged digest in GHCR.
+  publish:
+    name: Build, smoke-test and publish the image to GHCR
+    if: github.event_name == 'push'
+    needs: integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: chat
+          POSTGRES_PASSWORD: chat
+          POSTGRES_DB: chat
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U chat" --health-interval 5s --health-timeout 5s --health-retries 10
+      valkey:
+        image: valkey/valkey:9.2-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # main → `main`, `sha-<short>` and `latest`; tag v1.2.3 → `1.2.3`, `1.2` and `sha-<short>`.
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          # The default (latest=auto) would also move `latest` on every semver tag, so a patch
+          # tag for an older release line would roll it back; `latest` follows main only.
+          flavor: latest=false
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+      - name: Smoke-test the pushed digest
+        run: .github/scripts/image-smoke.sh "$IMAGE@$DIGEST"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+      - name: Tag the tested digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mapfile -t tags < <(jq -r '.tags[]' <<<"$DOCKER_METADATA_OUTPUT_JSON")
+          args=()
+          for tag in "${tags[@]}"; do args+=(--tag "$tag"); done
+          docker buildx imagetools create "${args[@]}" "$IMAGE@$DIGEST"
+          docker buildx imagetools inspect "${tags[0]}"
