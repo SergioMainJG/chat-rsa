@@ -11,8 +11,10 @@ import {
   sessionHint,
 } from '../auth/auth.page-guard.ts';
 import { hasLiveSession } from '../auth/presentation/auth.view.ts';
+import { activeLocale, messages } from '../i18n/i18n.messages.ts';
+import { installFieldValidity } from '../shared/form-validity.ts';
 import { ChatController, type SearchResult } from './application/chat.controller.ts';
-import { bootstrapSession, type SessionHint, SIGN_IN_PATH } from './application/chat.session.ts';
+import { bootstrapSession, type SessionHint, signInPath } from './application/chat.session.ts';
 import {
   browserNetwork,
   browserTimers,
@@ -30,7 +32,10 @@ const READ_VISIBILITY_THRESHOLD = 0.6;
 /** Within this distance of the bottom, new messages keep the list scrolled to the end. */
 const STICK_TO_BOTTOM_PX = 80;
 
-const timeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' });
+const timeFormat = new Intl.DateTimeFormat(activeLocale(), {
+  dateStyle: 'short',
+  timeStyle: 'short',
+});
 
 // The JWT is in an HttpOnly cookie this page never sees; only its expiry hint is readable.
 const hint: SessionHint = {
@@ -49,6 +54,7 @@ function element<T extends Element>(selector: string, type: new () => T): T {
 const ui = {
   addMemberForm: element('[data-add-member-form]', HTMLFormElement),
   banner: element('[data-connection-banner]', HTMLElement),
+  chat: element('.chat', HTMLElement),
   composer: element('[data-composer]', HTMLFormElement),
   createRoomForm: element('[data-create-room-form]', HTMLFormElement),
   keyWarningList: element('[data-key-warning-list]', HTMLUListElement),
@@ -59,15 +65,19 @@ const ui = {
   messages: element('[data-messages]', HTMLOListElement),
   messageTemplate: element('[data-message-template]', HTMLTemplateElement),
   notice: element('[data-notice]', HTMLElement),
+  roomActions: element('[data-room-actions]', HTMLElement),
+  roomActionsTrigger: element('[data-room-actions-trigger]', HTMLButtonElement),
   roomName: element('[data-room-name]', HTMLElement),
   roomPanel: element('[data-room-panel]', HTMLElement),
   rooms: element('[data-rooms]', HTMLUListElement),
-  /** CSS-only switch between the rooms list and the open room on narrow screens. */
-  roomsToggle: element('#rooms-toggle', HTMLInputElement),
+  roomsTitle: element('#rooms-title', HTMLElement),
   scroller: element('[data-messages-scroller]', HTMLElement),
+  /** Narrow screens only: from the open room back to the rooms list, and back again. */
   searchEmpty: element('[data-search-empty]', HTMLElement),
   searchForm: element('[data-search-form]', HTMLFormElement),
   searchResults: element('[data-search-results]', HTMLOListElement),
+  showRoom: element('[data-show-room]', HTMLButtonElement),
+  showRooms: element('[data-show-rooms]', HTMLButtonElement),
   signInLink: element('[data-sign-in-link]', HTMLAnchorElement),
   signOut: element('[data-sign-out]', HTMLButtonElement),
   typing: element('[data-typing]', HTMLElement),
@@ -155,7 +165,7 @@ async function main(): Promise<void> {
   }
   revealPage();
   if (result.kind === 'failed') {
-    ui.notice.textContent = `Could not start the chat: ${result.message}`;
+    ui.notice.textContent = messages().couldNotStart(result.message);
     showConnection('closed');
     return;
   }
@@ -210,7 +220,10 @@ async function main(): Promise<void> {
       renderRooms,
       renderSearch,
       renderTyping: (text) => {
-        ui.typing.textContent = text;
+        // A live region: write only a change, so the same text is not announced twice.
+        if (ui.typing.textContent !== text) {
+          ui.typing.textContent = text;
+        }
       },
     },
   });
@@ -228,7 +241,7 @@ async function main(): Promise<void> {
       .catch(() => null)
       .finally(() => {
         // replace, not assign: Back must not return to the chat of a session that is over.
-        location.replace(SIGN_IN_PATH);
+        location.replace(signInPath());
       });
   });
   await chat.start(initialRoomId());
@@ -266,9 +279,26 @@ function messageElement(item: MessageItem): HTMLLIElement {
   return li;
 }
 
+/** The popover may be missing (older browsers): then the trigger toggles `data-open` instead. */
+const hasPopover = Object.hasOwn(HTMLElement.prototype, 'popover');
+
+function closeRoomActions(): void {
+  if (hasPopover) {
+    ui.roomActions.hidePopover();
+  } else {
+    ui.roomActions.removeAttribute('data-open');
+    ui.roomActionsTrigger.setAttribute('aria-expanded', 'false');
+  }
+}
+
+/**
+ * Narrow screens show the rooms list or the open room. `focus` moves focus to the heading of the
+ * pane that is shown, so keyboard and screen reader users land where the view changed.
+ */
 async function openRoom(roomId: string): Promise<void> {
   // On narrow screens picking a room (from the list or a search result) shows that room.
-  ui.roomsToggle.checked = false;
+  closeRoomActions();
+  showRoomsList(false, false);
   await controller?.openRoom(roomId);
   rememberRoom(controller?.activeRoomId ?? null);
 }
@@ -368,6 +398,17 @@ function showConnection(state: ConnectionState): void {
   ui.signInLink.hidden = state !== 'unauthorized';
 }
 
+function showRoomsList(shown: boolean, focus: boolean): void {
+  ui.chat.toggleAttribute('data-show-rooms', shown);
+  ui.showRooms.setAttribute('aria-expanded', String(shown));
+  if (shown) {
+    closeRoomActions();
+  }
+  if (focus) {
+    (shown ? ui.roomsTitle : ui.roomName).focus();
+  }
+}
+
 function socketUrl(): string {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${location.host}${SOCKET_PATH}`;
@@ -395,6 +436,9 @@ function wire(chat: ChatController): void {
     const members = formText(form, 'members');
     void (async (): Promise<void> => {
       await runBusy(form, async () => chat.createRoom(name, members));
+      if (chat.activeRoomId !== null) {
+        showRoomsList(false, false);
+      }
       rememberRoom(chat.activeRoomId);
     })();
   });
@@ -404,6 +448,7 @@ function wire(chat: ChatController): void {
     void runBusy(ui.addMemberForm, async () => chat.addMember(name));
   });
   ui.leaveRoom.addEventListener('click', () => {
+    closeRoomActions();
     void (async (): Promise<void> => {
       const error = await chat.leaveRoom();
       ui.notice.textContent = error ?? '';
@@ -437,12 +482,31 @@ function wire(chat: ChatController): void {
     chat.composerInput();
   });
   ui.composer.addEventListener('keydown', (event) => {
-    // Enter sends, Shift+Enter adds a line; never while an IME is composing text.
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    // Enter sends, Shift+Enter adds a line. The Enter that confirms an IME conversion never sends:
+    // Safari resets `isComposing` before that keydown (WebKit bug 165004), but still reports it
+    // with keyCode 229.
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
+      if (event.isComposing || event.keyCode === 229) {
+        return;
+      }
       ui.composer.requestSubmit();
     }
   });
+  ui.showRooms.addEventListener('click', () => {
+    showRoomsList(true, true);
+  });
+  ui.showRoom.addEventListener('click', () => {
+    showRoomsList(false, true);
+  });
+  if (!hasPopover) {
+    ui.roomActionsTrigger.setAttribute('aria-expanded', 'false');
+    ui.roomActionsTrigger.addEventListener('click', () => {
+      const open = ui.roomActions.toggleAttribute('data-open');
+      ui.roomActionsTrigger.setAttribute('aria-expanded', String(open));
+    });
+  }
+  installFieldValidity();
   document.addEventListener('visibilitychange', () => {
     chat.flushReads();
   });

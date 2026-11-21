@@ -1,6 +1,6 @@
 # Home page specification (Komwasai)
 
-Source of truth for how `/` (`src/frontend/index.html` + `src/frontend/styles.css`) must look and read. It keeps the visual world of the mockup `img/design-landscape.png` and applies the fixes from the critique `.impeccable/critique/2026-11-14T08-16-56Z__img-design-landscape-png.md` (NN/g heuristics, 16/32 on the mockup).
+Source of truth for how the home page (`/es` from `src/frontend/index.es.html`, `/en` from its English translation `src/frontend/index.en.html`, both with `src/frontend/styles.css`) must look and read. The Spanish copy below is the reference; the English page mirrors it. It keeps the visual world of the mockup `img/design-landscape.png` and applies the fixes from the critique `.impeccable/critique/2026-11-14T08-16-56Z__img-design-landscape-png.md` (NN/g heuristics, 16/32 on the mockup).
 
 Direction chosen by the owner: technical and honest. The page shows how the encryption works instead of only claiming it.
 
@@ -71,7 +71,7 @@ Spacing scale: 4, 8, 12, 16, 24, 32, 48, 64, 96 px. Radius: pills `999px`, panel
 
 ## 5. Header and calls to action
 
-- Left: logo mark + wordmark "Komwasai" linking to `/`. The mark is `src/frontend/assets/isotipo-96.png` (the trimmed `public/isotipo.png`, shown at 32px); `public/favicon.svg` has an opaque black ground and stays a favicon only.
+- Left: logo mark + wordmark "Komwasai" linking to `/`. The mark is `src/frontend/assets/isotipo-96.webp` (the trimmed `public/isotipo.png`, padded to a square, 96px for 3x screens, shown at 32px); `public/favicon.svg` has an opaque black ground and stays a favicon only.
 - Right: `Entrar` as a text link (to `/sign-in`), then `Crear cuenta` as the only pill in the header (to `/sign-up`). Both hit areas at least 44x44px (padding, not font size). The mockup's pill was 29px tall and "Entrar" had no hit area.
 - Hero actions: one primary button `Crear cuenta` (`/sign-up`, white fill, black label, min 48px tall, 32px horizontal padding) followed by the text `¿Ya tienes cuenta?` and the link `Entrar` (`/sign-in`).
 - Remove "Chatea ya!": it duplicated "Crear cuenta" without saying where it led. No other CTA competes in the first viewport.

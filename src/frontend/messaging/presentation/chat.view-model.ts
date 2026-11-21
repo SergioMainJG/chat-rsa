@@ -1,7 +1,8 @@
 import type { RoomSummary } from '../../../shared/contracts/messaging.contract.ts';
 import type { LocalMessageStatus } from '../connection/messaging.message-status.ts';
 
-import { STATUS_LABEL } from './chat.status.ts';
+import { messages } from '../../i18n/i18n.messages.ts';
+import { statusLabel } from './chat.status.ts';
 
 /** A message as the page keeps it: stored (with an id) or still queued in the outbox. */
 export type MessageEntry = {
@@ -53,9 +54,6 @@ export type RoomItem = {
   readonly name: string;
 };
 
-export const FAILED_LABEL = 'Not sent';
-export const UNDECRYPTABLE_TEXT = 'Unable to decrypt';
-
 const MEMBER_SEPARATOR = /[\s,]+/u;
 
 export function displayName(
@@ -64,9 +62,9 @@ export function displayName(
   names: ReadonlyMap<number, string>,
 ): string {
   if (userId === selfId) {
-    return 'You';
+    return messages().self;
   }
-  return names.get(userId) ?? `User ${userId}`;
+  return names.get(userId) ?? messages().userFallback(userId);
 }
 
 /**
@@ -80,7 +78,7 @@ export function messageKey(senderId: number, idempotencyKey: string): string {
 
 /** The warning a room shows while a member's identity key differs from its pin (S5). */
 export function keyChangeNotice(name: string): string {
-  return `The security key of ${name} changed. Messages to this room are paused until you trust the new key.`;
+  return messages().keyChanged(name);
 }
 
 /** Member names typed in a form: separated by commas or spaces, without duplicates. */
@@ -144,9 +142,9 @@ function compareEntries(left: MessageEntry, right: MessageEntry): number {
 
 function statusLabelOf(entry: MessageEntry, status: LocalMessageStatus | null): string {
   if (entry.failed) {
-    return FAILED_LABEL;
+    return messages().failedLabel;
   }
-  return status === null ? '' : STATUS_LABEL[status];
+  return status === null ? '' : statusLabel(status);
 }
 
 function toMessageItem(
@@ -168,7 +166,7 @@ function toMessageItem(
     sender: displayName(entry.senderId, context.selfId, context.names),
     status,
     statusLabel: statusLabelOf(entry, status),
-    text: entry.text ?? UNDECRYPTABLE_TEXT,
+    text: entry.text ?? messages().undecryptable,
     time: entry.createdAt,
     timeLabel: context.formatTime(entry.createdAt),
     undecryptable: entry.text === null,

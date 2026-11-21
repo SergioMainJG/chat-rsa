@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { setLocaleFromLang } from '../../i18n/i18n.messages.ts';
 import { credentialsFrom, hasLiveSession, outcomeOf } from './auth.view.ts';
 
 const NOW_MS = 1_800_000_000_000;
@@ -52,7 +53,7 @@ describe('outcomeOf', () => {
   test('a 2xx {user} body (the token is only in the cookie) is a success with the session that goes to the chat room', async () => {
     expect(await outcomeOf(Response.json(session, { status: 201 }))).toEqual({
       kind: 'success',
-      redirectTo: '/chat',
+      redirectTo: '/en/chat',
       session,
     });
   });
@@ -100,4 +101,26 @@ describe('outcomeOf', () => {
       message: 'Something went wrong. Please try again.',
     });
   });
+});
+
+test('on a Spanish page the server message and field errors are translated', async () => {
+  setLocaleFromLang('es');
+  try {
+    const response = Response.json(
+      {
+        error: 'Bad Request',
+        errors: [{ field: 'name', message: 'Name is required' }],
+        message: 'Validation failed',
+        statusCode: 400,
+      },
+      { status: 400 },
+    );
+    expect(await outcomeOf(response)).toEqual({
+      fieldErrors: { name: 'El nombre es obligatorio.' },
+      kind: 'failure',
+      message: 'Revisa los campos marcados.',
+    });
+  } finally {
+    setLocaleFromLang('en');
+  }
 });

@@ -1,6 +1,7 @@
 import type { PublicUser } from '../../../shared/contracts/auth.contract.ts';
 import type { KeyStore } from '../crypto/messaging.crypto.key-store.ts';
 
+import { messages, pagePath } from '../../i18n/i18n.messages.ts';
 import { SenderKeySession } from '../crypto/messaging.crypto.session.ts';
 import { ChatApi, type FetchLike } from './chat.api.ts';
 
@@ -57,7 +58,10 @@ class SessionEndedError extends Error {
   }
 }
 
-export const SIGN_IN_PATH = '/sign-in';
+/** The sign-in page, in the page's locale. */
+export function signInPath(): string {
+  return pagePath('sign-in');
+}
 
 /**
  * Starts the chat session: without a live session hint the user goes to /sign-in; otherwise the
@@ -67,7 +71,7 @@ export const SIGN_IN_PATH = '/sign-in';
 export async function bootstrapSession(deps: BootstrapDeps): Promise<BootstrapResult> {
   const { fetch, hint, keyStoreFor, navigate } = deps;
   if (!hint.isLive()) {
-    navigate(SIGN_IN_PATH);
+    navigate(signInPath());
     return { kind: 'redirected' };
   }
   let redirected = false;
@@ -77,7 +81,7 @@ export async function bootstrapSession(deps: BootstrapDeps): Promise<BootstrapRe
       if (!redirected) {
         redirected = true;
         hint.clear();
-        navigate(SIGN_IN_PATH);
+        navigate(signInPath());
       }
     },
   });
@@ -127,7 +131,7 @@ export async function bootstrapSession(deps: BootstrapDeps): Promise<BootstrapRe
 
 function failureMessage(outcome: { readonly kind: string; readonly message?: string }): string {
   if (outcome.kind === 'rate-limited') {
-    return 'Too many requests. Please wait a moment and reload.';
+    return messages().tooManyRequestsReload;
   }
-  return outcome.message ?? 'Something went wrong. Please try again.';
+  return outcome.message ?? messages().genericError;
 }

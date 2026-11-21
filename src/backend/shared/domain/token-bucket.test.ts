@@ -31,6 +31,13 @@ describe('takeToken', () => {
     expect(outcome.state.tokens).toBe(2);
   });
 
+  test('the refill is elapsed seconds times the refill rate', () => {
+    const fast = { capacity: 10, refillPerSecond: 4 };
+    const outcome = takeToken({ tokens: 0, updatedAt: 0 }, fast, 500);
+    expect(outcome.allowed).toBe(true);
+    expect(outcome.state.tokens).toBe(1);
+  });
+
   test('a clock that goes backwards never mints tokens', () => {
     const outcome = takeToken({ tokens: 0, updatedAt: 5000 }, POLICY, 1000);
     expect(outcome.allowed).toBe(false);

@@ -21,12 +21,14 @@ type Harness = {
 
 class FakeConnection {
   open = true;
+  /** The socket still reports open but refuses the frame (it is closing). */
+  refuse = false;
   readonly sent: SendFrame[] = [];
 
   isOpen = (): boolean => this.open;
 
   send = (frame: ClientFrame): boolean => {
-    if (!this.open) {
+    if (!this.open || this.refuse) {
       return false;
     }
     if (frame.type === 'message.send') {
@@ -216,6 +218,31 @@ describe('OutboxFlusher', () => {
     flusher.handleFrame(ack('k1'));
     await settle();
     expect(sentKeys()).toEqual(['k1', 'k1', 'k2']);
+  });
+
+  test('a ready while the only queued item awaits its ack resends it at once', async () => {
+    const { flusher, sentKeys, stops } = setup();
+    await flusher.enqueue('room-1', 'one');
+    await settle();
+    expect(sentKeys()).toEqual(['k1']);
+
+    flusher.onReady();
+    await settle();
+
+    expect(sentKeys()).toEqual(['k1', 'k1']);
+    expect(stops).toEqual([]);
+  });
+
+  test('a send the socket refuses stops the flush as disconnected and keeps the item queued', async () => {
+    const { connection, flusher, queuedKeys, statuses, stops, timers } = setup();
+    connection.refuse = true;
+    await flusher.enqueue('room-1', 'one');
+    await settle();
+
+    expect(stops).toEqual([{ idempotencyKey: 'k1', reason: 'disconnected' }]);
+    expect(statuses).toEqual([['k1', 'pending']]);
+    expect(timers.delays()).toEqual([]);
+    expect(await queuedKeys()).toEqual(['k1']);
   });
 
   test('a conflict error re-encrypts and retries the item once with the same key', async () => {

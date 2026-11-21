@@ -7,6 +7,8 @@ import type {
 } from '../../../shared/contracts/messaging.contract.ts';
 import type { SenderKeyEnvelopeUpload } from '../crypto/messaging.crypto.session.ts';
 
+import { messages } from '../../i18n/i18n.messages.ts';
+import { translateServerMessage } from '../../i18n/i18n.server-errors.ts';
 import {
   arrayOf,
   isAuthResponse,
@@ -45,9 +47,6 @@ export type { RoomReceipt } from './chat.api.guards.ts';
 const INVALID: unique symbol = Symbol('invalid body');
 
 type Parse<T> = (body: unknown) => T | typeof INVALID;
-
-export const NETWORK_ERROR = 'Network error. Check your connection.';
-export const UNEXPECTED_RESPONSE = 'Unexpected response from the server';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_RETRY_AFTER_SECONDS = 1;
@@ -209,7 +208,7 @@ export class ChatApi {
     try {
       response = await this.#deps.fetch(url, init);
     } catch {
-      return { kind: 'failure', message: NETWORK_ERROR, status: 0 };
+      return { kind: 'failure', message: messages().networkError, status: 0 };
     }
     const outcome = await outcomeOf(response, parse);
     if (outcome.kind === 'unauthorized') {
@@ -226,7 +225,7 @@ export async function outcomeOf<T>(response: Response, parse: Parse<T>): Promise
   if (response.ok) {
     const value = parse(body);
     return value === INVALID
-      ? { kind: 'failure', message: UNEXPECTED_RESPONSE, status: response.status }
+      ? { kind: 'failure', message: messages().unexpectedResponse, status: response.status }
       : { kind: 'ok', value };
   }
   switch (response.status) {
@@ -252,8 +251,8 @@ function ignoreBody(): null {
 
 function messageOf(body: unknown): string {
   return isRecord(body) && typeof body.message === 'string' && body.message !== ''
-    ? body.message
-    : 'Something went wrong. Please try again.';
+    ? translateServerMessage(body.message)
+    : messages().genericError;
 }
 
 function parseJson(text: string): unknown {

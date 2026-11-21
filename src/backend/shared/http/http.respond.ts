@@ -3,6 +3,7 @@ import type { Result } from '../domain/result.ts';
 
 import { AppError, InternalServerError } from '../domain/app.error.ts';
 import { errorResponse } from './http.error-response.ts';
+import { SECURITY_HEADERS } from './security-headers.ts';
 
 /**
  * Runs a handler so both failure paths reach the client in the same shape: thrown `AppError`s keep
@@ -30,5 +31,7 @@ export function resultResponse<T>(
   result: Result<T, AppError>,
   status = 200,
 ): Response {
-  return result.ok ? Response.json(result.value, { status }) : errorResponse(request, result.error);
+  return result.ok
+    ? Response.json(result.value, { headers: SECURITY_HEADERS, status })
+    : errorResponse(request, result.error);
 }

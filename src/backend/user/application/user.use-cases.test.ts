@@ -8,6 +8,7 @@ import {
   ValidationError,
 } from '../../shared/domain/app.error.ts';
 import { InMemoryRateLimiter } from '../../shared/rate-limit/rate-limit.in-memory.ts';
+import { User } from '../domain/user.entity.ts';
 import { PasswordHash, UserName } from '../domain/user.value-objects.ts';
 import { UserRepositoryImpl } from '../infrastructure/user.repository.impl.ts';
 import { JoseTokenIssuer, JoseTokenVerifier } from '../infrastructure/user.security.jose.ts';
@@ -251,12 +252,17 @@ function refreshUseCase(options: { now?: () => number; refreshed?: Array<[string
   );
 }
 
-async function tokenFor(name: string, expiresIn = '1h', session?: { id: string; startedAt: Date }): Promise<string> {
+/** The stored user; throws instead of letting a missing fixture make a rejection test pass vacuously. */
+async function storedUser(name: string): Promise<User> {
   const user = await datasource.findByName(UserName.restore(name));
   if (!user) {
     throw new Error(`no user ${name}`);
   }
-  const { token } = await new JoseTokenIssuer(SECRET, expiresIn).issue(user, session);
+  return user;
+}
+
+async function tokenFor(name: string, expiresIn = '1h', session?: { id: string; startedAt: Date }): Promise<string> {
+  const { token } = await new JoseTokenIssuer(SECRET, expiresIn).issue(await storedUser(name), session);
   return token;
 }
 
@@ -285,11 +291,16 @@ describe('RefreshUseCase', () => {
     [
       'a token signed with another secret',
       async (): Promise<string> => {
-        const user = await datasource.findByName(UserName.restore('alice'));
-        if (!user) {
-          return '';
-        }
-        const { token } = await new JoseTokenIssuer('other-secret').issue(user);
+        const { token } = await new JoseTokenIssuer('other-secret').issue(await storedUser('alice'));
+        return token;
+      },
+    ],
+    [
+      'a validly signed token whose name is not a valid user name',
+      async (): Promise<string> => {
+        const user = await storedUser('alice');
+        const renamed = new User(user.id, UserName.restore('not a valid name!'), user.passwordHash);
+        const { token } = await new JoseTokenIssuer(SECRET).issue(renamed);
         return token;
       },
     ],

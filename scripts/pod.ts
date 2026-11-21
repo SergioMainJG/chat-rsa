@@ -18,6 +18,12 @@ const HOST_PORTS = {
   database: Bun.env.POD_DB_PORT ?? '5433',
 } as const;
 
+// Postgres (static chat:chat credentials) and Valkey (no password) are published on loopback only,
+// so no network peer can reach them. The app defaults to loopback too; set POD_APP_BIND=0.0.0.0 to
+// open it to the LAN (e.g. to try the chat from a phone).
+const LOOPBACK = '127.0.0.1';
+const APP_BIND = Bun.env.POD_APP_BIND ?? LOOPBACK;
+
 async function podExists(): Promise<boolean> {
   const { exitCode } = await $`podman pod exists ${POD}`.nothrow().quiet();
   return exitCode === 0;
@@ -41,7 +47,7 @@ async function startApp(): Promise<void> {
 
 async function startInfra(): Promise<void> {
   if (!(await podExists())) {
-    await $`podman pod create --name ${POD} -p ${HOST_PORTS.app}:3000 -p ${HOST_PORTS.database}:5432 -p ${HOST_PORTS.cache}:6379`;
+    await $`podman pod create --name ${POD} -p ${APP_BIND}:${HOST_PORTS.app}:3000 -p ${LOOPBACK}:${HOST_PORTS.database}:5432 -p ${LOOPBACK}:${HOST_PORTS.cache}:6379`;
   }
   await $`podman run -d --replace --pod ${POD} --name ${POD}-db \
     -e POSTGRES_USER=chat -e POSTGRES_PASSWORD=chat -e POSTGRES_DB=chat \

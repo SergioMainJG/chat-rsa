@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { Password, UserName } from './user.value-objects.ts';
+import { MAX_NAME_LENGTH, MAX_PASSWORD_LENGTH, Password, UserName } from './user.value-objects.ts';
 
 describe('UserName', () => {
   test.each(['alice', 'Alice42', '42', 'José'])('accepts %p', (raw) => {
@@ -17,6 +17,15 @@ describe('UserName', () => {
 
   test.each(['', undefined, 42])('requires a string, got %p', (raw) => {
     expect(UserName.create(raw)).toEqual({ error: { field: 'name', message: 'Name is required' }, ok: false });
+  });
+
+  test('accepts exactly MAX_NAME_LENGTH characters and rejects one more', () => {
+    expect(MAX_NAME_LENGTH).toBe(64);
+    expect(UserName.create('a'.repeat(64)).ok).toBe(true);
+    expect(UserName.create('a'.repeat(65))).toEqual({
+      error: { field: 'name', message: 'Name must be at most 64 characters' },
+      ok: false,
+    });
   });
 });
 
@@ -40,5 +49,14 @@ describe('Password', () => {
 
   test.each(['', undefined, null])('requires a string, got %p', (raw) => {
     expect(Password.create(raw)).toEqual({ error: { field: 'password', message: 'Password is required' }, ok: false });
+  });
+
+  test('accepts exactly MAX_PASSWORD_LENGTH characters and rejects one more', () => {
+    expect(MAX_PASSWORD_LENGTH).toBe(256);
+    expect(Password.forVerification('a'.repeat(256)).ok).toBe(true);
+    expect(Password.forVerification('a'.repeat(257))).toEqual({
+      error: { field: 'password', message: 'Password must be at most 256 characters' },
+      ok: false,
+    });
   });
 });

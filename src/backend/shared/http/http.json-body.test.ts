@@ -52,6 +52,29 @@ describe('readJsonObject', () => {
     expect(error).toMatchObject({ message: 'Request body must be at most 65536 bytes', statusCode: 413 });
   });
 
+  test('rejects a declared Content-Length over 64 KiB before reading the body', async () => {
+    const request = new Request('http://localhost/api/x', {
+      body: '{}',
+      headers: { 'content-length': String(MAX_JSON_BODY_BYTES + 1), 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const error = await failureOf(readJsonObject(request, []));
+    expect(error).toBeInstanceOf(PayloadTooLargeError);
+    expect(error).toMatchObject({ message: 'Request body must be at most 65536 bytes', statusCode: 413 });
+  });
+
+  test('accepts a body of exactly 64 KiB that declares its length', async () => {
+    const name = 'x'.repeat(MAX_JSON_BODY_BYTES - '{"name":""}'.length);
+    const body = JSON.stringify({ name });
+    expect(body.length).toBe(MAX_JSON_BODY_BYTES);
+    const request = new Request('http://localhost/api/x', {
+      body,
+      headers: { 'content-length': String(body.length), 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    expect(await readJsonObject(request, ['name'])).toEqual({ name });
+  });
+
   test('rejects a streamed body over 64 KiB that declares no length', async () => {
     const chunk = new Uint8Array(MAX_JSON_BODY_BYTES / 2);
     const stream = new ReadableStream<Uint8Array>({

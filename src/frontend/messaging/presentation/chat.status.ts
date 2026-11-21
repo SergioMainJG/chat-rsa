@@ -1,17 +1,16 @@
 import type { ConnectionState } from '../connection/messaging.connection.ts';
 
+import { messages } from '../../i18n/i18n.messages.ts';
 import {
   advanceStatus,
   type LocalMessageStatus,
   type StatusEvent,
 } from '../connection/messaging.message-status.ts';
 
-export const STATUS_LABEL: Readonly<Record<LocalMessageStatus, string>> = {
-  delivered: 'Delivered',
-  pending: 'Pending',
-  read: 'Read',
-  sent: 'Sent',
-};
+/** The label of a message status, in the page's language. */
+export function statusLabel(status: LocalMessageStatus): string {
+  return messages().status[status];
+}
 
 const EVENT_FOR: Readonly<Record<Exclude<LocalMessageStatus, 'pending'>, StatusEvent>> = {
   delivered: 'acked',
@@ -19,17 +18,8 @@ const EVENT_FOR: Readonly<Record<Exclude<LocalMessageStatus, 'pending'>, StatusE
   sent: 'written',
 };
 
-const BANNER: Readonly<Record<ConnectionState, string>> = {
-  closed: '',
-  connecting: 'Connecting…',
-  offline: 'You are offline. Messages you send are kept and sent when the connection returns.',
-  open: '',
-  reconnecting: 'Connection lost. Reconnecting…',
-  unauthorized: 'Your session has ended. Sign in again.',
-};
-
 export function connectionBannerText(state: ConnectionState): string {
-  return BANNER[state];
+  return messages().banner[state];
 }
 
 /**

@@ -1,5 +1,8 @@
 import type { AuthResponse, Credentials } from '../../../shared/contracts/auth.contract.ts';
 
+import { messages, pagePath } from '../../i18n/i18n.messages.ts';
+import { translateServerMessage } from '../../i18n/i18n.server-errors.ts';
+
 /** What a sign-in or sign-up response means for the page, independent of the DOM. */
 export type AuthOutcome =
   | {
@@ -9,10 +12,10 @@ export type AuthOutcome =
     }
   | { readonly kind: 'success'; readonly redirectTo: string; readonly session: AuthResponse };
 
-/** Signing in or up takes the user straight to the chat room. */
-export const AFTER_AUTH_PATH = '/chat';
-
-export const GENERIC_ERROR = 'Something went wrong. Please try again.';
+/** Signing in or up takes the user straight to the chat room, in the page's locale. */
+export function afterAuthPath(): string {
+  return pagePath('chat');
+}
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null;
@@ -51,12 +54,16 @@ export function hasLiveSession(hint: null | string, nowMs: number): boolean {
 export async function outcomeOf(response: Response): Promise<AuthOutcome> {
   const body: unknown = await response.json().catch(() => null);
   if (response.ok && isSession(body)) {
-    return { kind: 'success', redirectTo: AFTER_AUTH_PATH, session: body };
+    return { kind: 'success', redirectTo: afterAuthPath(), session: body };
   }
   if (!response.ok && isRecord(body) && typeof body.message === 'string') {
-    return { fieldErrors: fieldErrorsOf(body.errors), kind: 'failure', message: body.message };
+    return {
+      fieldErrors: fieldErrorsOf(body.errors),
+      kind: 'failure',
+      message: translateServerMessage(body.message),
+    };
   }
-  return { fieldErrors: {}, kind: 'failure', message: GENERIC_ERROR };
+  return { fieldErrors: {}, kind: 'failure', message: messages().genericError };
 }
 
 function fieldErrorsOf(errors: unknown): Record<string, string> {
@@ -66,7 +73,7 @@ function fieldErrorsOf(errors: unknown): Record<string, string> {
   const byField: Record<string, string> = {};
   for (const entry of errors) {
     if (isRecord(entry) && typeof entry.field === 'string' && typeof entry.message === 'string') {
-      byField[entry.field] ??= entry.message;
+      byField[entry.field] ??= translateServerMessage(entry.message);
     }
   }
   return byField;

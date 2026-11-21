@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<frontend_audit repo="chat-rsa" scope="src/frontend" standard="modern-web-guidance" date="2026-11-20">
+  <summary>
+    <legacy_scan findings="0" active_rules="52" active_guides="38" />
+    <findings total="10" high="2" medium="5" low="3" />
+  </summary>
+
+  <findings>
+    <finding id="1" category="forms-accessibility" severity="high" guide="accessible-error-announcement">
+      <title>Desynchronized aria-invalid and aria-describedby with :user-invalid</title>
+      <locations>
+        <location file="src/frontend/auth/sign-in.html" lines="58-96" />
+        <location file="src/frontend/auth/sign-up.html" lines="58-102" />
+        <location file="src/frontend/auth/auth.form.ts" lines="42-51,88-94" />
+        <location file="src/frontend/messaging/chat.css" lines="302-305" />
+      </locations>
+      <description>
+        Form inputs rely on CSS :user-invalid and setCustomValidity() without syncing programmatic aria-invalid state.
+        Inputs omit initial aria-invalid="false" (causing Firefox and Safari to expose empty required fields as invalid
+        on page load, and Chromium not to expose them as invalid after interaction). Error elements are statically
+        referenced in aria-describedby in HTML markup rather than linked only when visible. On server validation failure,
+        auth.form.ts does not move focus to the first invalid field.
+      </description>
+      <remediation>
+        Initialize form controls with aria-invalid="false", synchronize aria-invalid="true"/"false" and aria-describedby
+        error IDs on blur/change/input/invalid/reset events, announce field errors via a single polite live region, and
+        move focus to the first invalid field when server validation fails.
+      </remediation>
+    </finding>
+
+    <finding id="2" category="browser-compatibility" severity="high" guide="ime-safe-enter-submit">
+      <title>IME-unsafe Enter-to-submit handler in Safari</title>
+      <locations>
+        <location file="src/frontend/messaging/chat.page.ts" lines="439-445" />
+      </locations>
+      <description>
+        The composer keydown handler checks only !event.isComposing before submitting on Enter. In Safari (WebKit bug
+        165004), compositionend fires before the confirming Enter keydown event, resetting event.isComposing to false
+        and causing incomplete IME text to be submitted prematurely.
+      </description>
+      <remediation>
+        Call event.preventDefault() when event.key === 'Enter' &amp;&amp; !event.shiftKey, then return early if
+        event.isComposing || event.keyCode === 229 (or use a 50ms event.timeStamp window against compositionend).
+      </remediation>
+    </finding>
+
+    <finding id="3" category="accessibility" severity="medium" guide="color,forms">
+      <title>Insufficient non-text contrast on auth form input borders</title>
+      <locations>
+        <location file="src/frontend/auth/auth.css" lines="75" />
+        <location file="src/frontend/styles.css" lines="13,15" />
+      </locations>
+      <description>
+        Auth inputs use border: 1px solid var(--color-surface-line) (#dddbea) on var(--color-surface) (#ffffff),
+        producing a contrast ratio of ~1.36:1, below the WCAG 1.4.11 Non-text Contrast minimum of 3:1 for UI component
+        boundaries.
+      </description>
+      <remediation>
+        Darken the input border token on white surfaces to at least 3:1 contrast against #ffffff (e.g., #767676 or an
+        equivalent indigo-tinted neutral).
+      </remediation>
+    </finding>
+
+    <finding id="4" category="forms-semantics" severity="medium" guide="forms">
+      <title>Fieldsets without legends and unnamed forms</title>
+      <locations>
+        <location file="src/frontend/auth/sign-in.html" lines="55" />
+        <location file="src/frontend/auth/sign-up.html" lines="55" />
+        <location file="src/frontend/messaging/chat.html" lines="71-72,108,143-144,176" />
+      </locations>
+      <description>
+        &lt;fieldset&gt; elements are used solely to disable controls during aria-busy requests without a &lt;legend&gt;
+        first child. In chat.html, multiple &lt;form&gt; elements on the same page lack accessible names via
+        aria-labelledby or aria-label.
+      </description>
+      <remediation>
+        Add a &lt;legend&gt; (visible or .visually-hidden) as the first child of each &lt;fieldset&gt;, and provide
+        accessible names (aria-labelledby or aria-label) for each &lt;form&gt; on chat.html.
+      </remediation>
+    </finding>
+
+    <finding id="5" category="browser-compatibility" severity="medium" guide="form-fields-automatically-fit-contents,forms">
+      <title>Textarea disables resize while relying on Newly Available field-sizing: content</title>
+      <locations>
+        <location file="src/frontend/messaging/chat.css" lines="807-814" />
+        <location file="src/frontend/messaging/chat.html" lines="178-186" />
+      </locations>
+      <description>
+        The chat composer textarea sets resize: none alongside field-sizing: content (Baseline Newly Available since
+        2026-06-16, not yet Widely Available). In browsers without field-sizing support, the textarea is locked to
+        rows="2" and cannot be resized by the user.
+      </description>
+      <remediation>
+        Scope resize: none inside @supports (field-sizing: content), or provide a @supports not (field-sizing: content)
+        CSS grid-mirror fallback so users without field-sizing can still resize or auto-grow the composer.
+      </remediation>
+    </finding>
+
+    <finding id="6" category="accessibility" severity="medium" guide="accessibility">
+      <title>Broken keyboard focus order for mobile rooms toggle checkbox</title>
+      <locations>
+        <location file="src/frontend/messaging/chat.html" lines="54-59,64,130" />
+        <location file="src/frontend/messaging/chat.css" lines="886-935" />
+      </locations>
+      <description>
+        On narrow screens, switching between the rooms list and active room relies on a .visually-hidden checkbox
+        placed in the DOM before &lt;aside&gt; and &lt;main&gt;, while its visible &lt;label&gt; ("Rooms") renders
+        inside &lt;main&gt;&lt;header&gt;. Keyboard focus therefore lands on the hidden checkbox out of visual order.
+      </description>
+      <remediation>
+        Replace the out-of-order checkbox hack with native &lt;button type="button"&gt; controls placed in their
+        visual locations (with aria-expanded / aria-controls or state toggling in chat.page.ts) and move focus
+        intentionally when switching views on narrow screens.
+      </remediation>
+    </finding>
+
+    <finding id="7" category="accessibility-overlays" severity="medium" guide="viewport-aware-dropdowns">
+      <title>Manage room floating panel uses details + position: absolute instead of Popover API</title>
+      <locations>
+        <location file="src/frontend/messaging/chat.html" lines="140-165" />
+        <location file="src/frontend/messaging/chat.css" lines="527-541" />
+      </locations>
+      <description>
+        The "Manage room" overlay uses &lt;details&gt; with a position: absolute; z-index: 2 panel. It lacks top-layer
+        promotion, light-dismiss (Escape key or outside click does not close it), and viewport-edge flip resilience.
+      </description>
+      <remediation>
+        Migrate to a trigger &lt;button popovertarget="room-actions-panel"&gt; and &lt;div id="room-actions-panel"
+        popover="auto"&gt; with CSS Anchor Positioning gated behind @supports (position-area: block-end) (or conditional
+        polyfill).
+      </remediation>
+    </finding>
+
+    <finding id="8" category="accessibility" severity="low" guide="accessibility">
+      <title>Typing indicator lacks live region semantics</title>
+      <locations>
+        <location file="src/frontend/messaging/chat.html" lines="174" />
+      </locations>
+      <description>
+        The typing status element (&lt;p class="typing" data-typing&gt;&lt;/p&gt;) updates dynamically without
+        role="status" or aria-live="polite", so screen reader users are not notified when participants are typing.
+      </description>
+      <remediation>
+        Add role="status" (or aria-live="polite") to the typing indicator element, debounced appropriately so
+        announcements do not spam assistive technologies.
+      </remediation>
+    </finding>
+
+    <finding id="9" category="forms-ux" severity="low" guide="forms,accessibility">
+      <title>Missing autocorrect="off" on identifier inputs and hints placed below inputs</title>
+      <locations>
+        <location file="src/frontend/auth/sign-in.html" lines="58-69" />
+        <location file="src/frontend/auth/sign-up.html" lines="58-101" />
+        <location file="src/frontend/messaging/chat.html" lines="86-96,147-157" />
+      </locations>
+      <description>
+        Identifier inputs (name, members, member-name) set autocapitalize="none" and spellcheck="false" but omit
+        autocorrect="off". In sign-up.html, field hints are placed below their inputs where browser autofill popovers
+        can obscure them during editing.
+      </description>
+      <remediation>
+        Add autocorrect="off" to identifier inputs and place field hints above their corresponding inputs in
+        sign-up.html.
+      </remediation>
+    </finding>
+
+    <finding id="10" category="accessibility" severity="low" guide="color">
+      <title>Missing Forced Colors Mode fallbacks for box-shadow and gradient cues</title>
+      <locations>
+        <location file="src/frontend/auth/auth.css" lines="44-48" />
+        <location file="src/frontend/messaging/chat.css" lines="771-777" />
+      </locations>
+      <description>
+        No @media (forced-colors: active) rules are defined. In Windows High Contrast / Forced Colors Mode, the
+        secondary focus ring box-shadow in auth.css and the radial-gradient typing dots in chat.css are stripped.
+      </description>
+      <remediation>
+        Add @media (forced-colors: active) fallbacks using system color keywords (e.g., CanvasText, Highlight) and
+        outline/border-based cues where box-shadow or background gradients convey state.
+      </remediation>
+    </finding>
+  </findings>
+</frontend_audit>

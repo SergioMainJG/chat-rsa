@@ -59,6 +59,15 @@ describe('ReadReceiptTracker', () => {
     expect(tracker.take('room')).toBe(NEWEST);
   });
 
+  test('a newer seed moves an existing watermark forward', () => {
+    const tracker = new ReadReceiptTracker();
+    tracker.seed('room', OLDEST);
+    tracker.seed('room', MIDDLE);
+    tracker.show('room', MIDDLE);
+
+    expect(tracker.take('room')).toBeNull();
+  });
+
   test('a seed never moves the watermark backwards', () => {
     const tracker = new ReadReceiptTracker();
     tracker.show('room', NEWEST);

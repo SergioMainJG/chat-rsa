@@ -14,6 +14,7 @@ import {
 import { errorResponse } from '../../shared/http/http.error-response.ts';
 import { readCappedJsonObject, readQuery } from '../../shared/http/http.json-body.ts';
 import { respond, resultResponse } from '../../shared/http/http.respond.ts';
+import { SECURITY_HEADERS } from '../../shared/http/security-headers.ts';
 
 export type AuthController = {
   readonly signIn: (request: Request) => Promise<Response>;
@@ -104,7 +105,10 @@ export function createAuthController(
 
 function sessionResponse(session: AuthSession, status: number, maxAgeSeconds: number): Response {
   const body: AuthResponse = { user: session.user };
-  return withCookies(Response.json(body, { status }), sessionCookies(session, maxAgeSeconds));
+  return withCookies(
+    Response.json(body, { headers: SECURITY_HEADERS, status }),
+    sessionCookies(session, maxAgeSeconds),
+  );
 }
 
 /** Token refresh lives beside sign-in and sign-up; it reads no body, only the session token. */
@@ -138,7 +142,7 @@ export function createSignOutController(useCase: SignOutPort, logger: Logger): S
           }
           const result = await useCase.execute(token);
           return result.ok
-            ? new Response(null, { status: 204 })
+            ? new Response(null, { headers: SECURITY_HEADERS, status: 204 })
             : errorResponse(request, result.error);
         }),
         clearedSessionCookies(),

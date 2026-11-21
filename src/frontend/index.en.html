@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,10 +10,10 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'sha256-6gww4zzHl2TKVqiqTG1nIjYMh2+YyAKZjnuhGVHl30M='; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"
     />
-    <title>Komwasai · Mensajería cifrada de extremo a extremo</title>
+    <title>Komwasai · End-to-end encrypted messaging</title>
     <meta
       name="description"
-      content="Solo tú y tus contactos pueden leer tus mensajes: Komwasai los cifra en tu dispositivo antes de enviarlos."
+      content="Only you and your contacts can read your messages: Komwasai encrypts them on your device before sending them."
     />
     <link rel="icon" href="../../public/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="../../public/favicon-32x32.png" type="image/png" sizes="32x32" />
@@ -26,83 +26,92 @@
     <link rel="expect" href="#hero-title" blocking="render" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="shell site-header-inner">
-        <a class="brand" href="/">
-          <img class="brand-mark" src="./assets/isotipo-96.png" alt="" width="32" height="32" />
+        <a class="brand" href="/en">
+          <img class="brand-mark" src="./assets/isotipo-96.webp" alt="" width="32" height="32" />
           <span class="brand-name">Komwasai</span>
         </a>
-        <nav class="header-nav" aria-label="Cuenta">
-          <a class="link-quiet" href="/sign-in">Entrar</a>
-          <a class="button-pill" href="/sign-up">Crear cuenta</a>
+        <nav class="header-nav" aria-label="Account">
+          <a
+            class="link-quiet lang-switch"
+            href="/?lang=es"
+            hreflang="es"
+            lang="es"
+            data-lang-switch
+            >Español</a
+          >
+          <a class="link-quiet" href="/en/sign-in">Sign in</a>
+          <a class="button-pill" href="/en/sign-up">Create account</a>
         </nav>
       </div>
     </header>
 
-    <main>
+    <main id="main">
       <section class="hero shell" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <h1 id="hero-title">Solo tú y tus contactos pueden leer tus mensajes.</h1>
+          <h1 id="hero-title">Only you and your contacts can read your messages.</h1>
           <p class="lead">
-            Komwasai cifra cada mensaje en tu dispositivo antes de enviarlo. Nuestro servidor solo
-            guarda texto cifrado que no puede leer.
+            Komwasai encrypts every message on your device before sending it. Our server stores only
+            ciphertext it cannot read.
           </p>
           <div class="hero-actions">
-            <a class="button-primary" href="/sign-up">Crear cuenta</a>
-            <p class="hero-signin">¿Ya tienes cuenta? <a href="/sign-in">Entrar</a></p>
+            <a class="button-primary" href="/en/sign-up">Create account</a>
+            <p class="hero-signin">Already have an account? <a href="/en/sign-in">Sign in</a></p>
           </div>
           <p class="hero-cipher-note">
-            Cifrado de extremo a extremo con X25519, HKDF-SHA256 y AES-256-GCM.
+            End-to-end encrypted with X25519, HKDF-SHA256 and AES-256-GCM.
           </p>
         </div>
 
         <figure class="journey">
           <ol class="journey-steps">
             <li class="journey-step">
-              <p class="journey-place">Tu dispositivo</p>
-              <p class="bubble">Hola, ¿nos vemos a las 8?</p>
+              <p class="journey-place">Your device</p>
+              <p class="bubble">Hi, see you at 8?</p>
             </li>
             <li class="journey-step journey-step-server">
               <p class="journey-place">
-                Nuestro servidor
-                <span class="tag">cifrado</span>
+                Our server
+                <span class="tag">encrypted</span>
               </p>
               <p class="bubble bubble-cipher">
                 <code class="cipher-text">9fQ2mX7vR1tLc0ZpK3wq8YbN5hJe…kL0x</code>
               </p>
-              <p class="journey-note">Solo ve esto.</p>
+              <p class="journey-note">This is all it sees.</p>
             </li>
             <li class="journey-step">
-              <p class="journey-place">El dispositivo de tu contacto</p>
-              <p class="bubble bubble-received">Hola, ¿nos vemos a las 8?</p>
+              <p class="journey-place">Your contact's device</p>
+              <p class="bubble bubble-received">Hi, see you at 8?</p>
             </li>
           </ol>
           <figcaption>
-            Cómo viaja un mensaje: se cifra en tu dispositivo y solo se descifra en el de tu
-            contacto.
+            How a message travels: it is encrypted on your device and decrypted only on your
+            contact's.
           </figcaption>
         </figure>
       </section>
 
-      <section class="visibility shell" id="servidor" aria-labelledby="visibility-title">
-        <h2 id="visibility-title">Qué ve nuestro servidor</h2>
+      <section class="visibility shell" id="server" aria-labelledby="visibility-title">
+        <h2 id="visibility-title">What our server sees</h2>
         <div class="visibility-lists">
           <div class="visibility-group">
-            <h3>Lo que no puede ver</h3>
+            <h3>What it cannot see</h3>
             <ul>
-              <li>El contenido de tus mensajes: solo guarda el texto cifrado.</li>
-              <li>Tus claves privadas: nunca salen de tu dispositivo.</li>
-              <li>Lo que buscas: la búsqueda se hace en tu dispositivo.</li>
+              <li>The content of your messages: it stores only the ciphertext.</li>
+              <li>Your private keys: they never leave your device.</li>
+              <li>What you search for: search runs on your device.</li>
             </ul>
           </div>
           <div class="visibility-group">
-            <h3>Lo que sí ve</h3>
+            <h3>What it does see</h3>
             <ul>
-              <li>Tu nombre de usuario y quién está en cada sala.</li>
-              <li>Los nombres de las salas.</li>
-              <li>Cuándo se envía cada mensaje y hasta dónde lo leyó cada miembro.</li>
-              <li>Tus claves públicas.</li>
-              <li>Tu dirección IP mientras usas el servicio, para limitar abusos.</li>
+              <li>Your user name and who is in each room.</li>
+              <li>The names of the rooms.</li>
+              <li>When each message is sent and how far each member has read.</li>
+              <li>Your public keys.</li>
+              <li>Your IP address while you use the service, to limit abuse.</li>
             </ul>
           </div>
         </div>
@@ -112,23 +121,23 @@
     <footer class="site-footer">
       <div class="shell site-footer-inner">
         <div class="footer-brand">
-          <a class="brand" href="/">
-            <img class="brand-mark" src="./assets/isotipo-96.png" alt="" width="32" height="32" />
+          <a class="brand" href="/en">
+            <img class="brand-mark" src="./assets/isotipo-96.webp" alt="" width="32" height="32" />
             <span class="brand-name">Komwasai</span>
           </a>
-          <p>Mensajería cifrada de extremo a extremo.</p>
+          <p>End-to-end encrypted messaging.</p>
         </div>
         <nav class="footer-column" aria-labelledby="footer-product">
-          <h2 id="footer-product">Producto</h2>
+          <h2 id="footer-product">Product</h2>
           <ul>
-            <li><a href="/sign-up">Crear cuenta</a></li>
-            <li><a href="/sign-in">Entrar</a></li>
+            <li><a href="/en/sign-up">Create account</a></li>
+            <li><a href="/en/sign-in">Sign in</a></li>
           </ul>
         </nav>
         <nav class="footer-column" aria-labelledby="footer-security">
-          <h2 id="footer-security">Seguridad</h2>
+          <h2 id="footer-security">Security</h2>
           <ul>
-            <li><a href="#servidor">Qué ve nuestro servidor</a></li>
+            <li><a href="#server">What our server sees</a></li>
           </ul>
         </nav>
       </div>

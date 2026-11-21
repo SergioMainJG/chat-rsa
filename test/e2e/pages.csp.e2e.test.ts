@@ -56,24 +56,30 @@ function policy(hash: string): string {
 }
 
 describe('Content-Security-Policy', () => {
-  test.each(['/', '/chat', '/sign-in', '/sign-up'])('%s carries the policy in a <meta>', async (path) => {
-    const html = await page(path);
-    const meta = CSP_META.exec(html);
+  test.each(['/es', '/en', '/es/chat', '/en/chat', '/es/sign-in', '/en/sign-in', '/es/sign-up', '/en/sign-up'])(
+    '%s carries the policy in a <meta>',
+    async (path) => {
+      const html = await page(path);
+      const meta = CSP_META.exec(html);
 
-    expect(meta?.groups?.policy).toBe(policy(await guardStyleHash()));
-    // Before anything it governs: stylesheets, scripts and the inline style.
-    expect(html.indexOf('http-equiv="Content-Security-Policy"')).toBeLessThan(html.indexOf('<link'));
-  });
+      expect(meta?.groups?.policy).toBe(policy(await guardStyleHash()));
+      // Before anything it governs: stylesheets, scripts and the inline style.
+      expect(html.indexOf('http-equiv="Content-Security-Policy"')).toBeLessThan(html.indexOf('<link'));
+    },
+  );
 
-  test.each(['/chat', '/sign-in', '/sign-up'])('the hash matches the inline style %s serves', async (path) => {
-    const html = await page(path);
-    const css = INLINE_STYLE.exec(html)?.groups?.css ?? '';
+  test.each(['/es/chat', '/en/chat', '/es/sign-in', '/en/sign-in', '/es/sign-up', '/en/sign-up'])(
+    'the hash matches the inline style %s serves',
+    async (path) => {
+      const html = await page(path);
+      const css = INLINE_STYLE.exec(html)?.groups?.css ?? '';
 
-    expect(css).toContain("html[data-guard='pending'] body");
-    expect(CSP_META.exec(html)?.groups?.policy).toContain(`'sha256-${sha256(css)}'`);
-    // No other inline style or script the policy would block.
-    expect(html.match(/<style>/gu)).toHaveLength(1);
-    expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/u);
-    expect(html).not.toMatch(/\sstyle="/u);
-  });
+      expect(css).toContain("html[data-guard='pending'] body");
+      expect(CSP_META.exec(html)?.groups?.policy).toContain(`'sha256-${sha256(css)}'`);
+      // No other inline style or script the policy would block.
+      expect(html.match(/<style>/gu)).toHaveLength(1);
+      expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/u);
+      expect(html).not.toMatch(/\sstyle="/u);
+    },
+  );
 });

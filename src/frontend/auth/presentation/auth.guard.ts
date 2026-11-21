@@ -1,13 +1,12 @@
 import { SESSION_HINT_COOKIE } from '../../../shared/contracts/auth.contract.ts';
-import { AFTER_AUTH_PATH, hasLiveSession } from './auth.view.ts';
+import { pagePath } from '../../i18n/i18n.messages.ts';
+import { afterAuthPath, hasLiveSession } from './auth.view.ts';
 
 /** Who may see a page: signed-in members (the chat) or guests (sign-in and sign-up). */
 export type GuardDecision =
   { readonly kind: 'allow' } | { readonly kind: 'redirect'; readonly path: string };
 
 export type PageAccess = 'guests' | 'members';
-
-export const SIGN_IN_PATH = '/sign-in';
 
 /**
  * Decides, before the page is shown, whether the visitor may see it, from the session hint (the
@@ -17,10 +16,10 @@ export const SIGN_IN_PATH = '/sign-in';
 export function guardRoute(access: PageAccess, hint: null | string, nowMs: number): GuardDecision {
   const live = hasLiveSession(hint, nowMs);
   if (access === 'members' && !live) {
-    return { kind: 'redirect', path: SIGN_IN_PATH };
+    return { kind: 'redirect', path: pagePath('sign-in') };
   }
   if (access === 'guests' && live) {
-    return { kind: 'redirect', path: AFTER_AUTH_PATH };
+    return { kind: 'redirect', path: afterAuthPath() };
   }
   return { kind: 'allow' };
 }

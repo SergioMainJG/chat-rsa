@@ -15,6 +15,8 @@ import type { SenderKeySession } from '../crypto/messaging.crypto.session.ts';
 import type { LocalMessageStore } from '../search/messaging.search.ts';
 import type { ChatApi } from './chat.api.ts';
 
+import { messages } from '../../i18n/i18n.messages.ts';
+import { translateServerMessage } from '../../i18n/i18n.server-errors.ts';
 import {
   type LocalMessageStatus,
   readReceiptCovers,
@@ -222,11 +224,11 @@ export class ChatController {
   async addMember(name: string): Promise<null | string> {
     const roomId = this.#activeRoomId;
     if (roomId === null) {
-      return 'Open a room first.';
+      return messages().openRoomFirst;
     }
     const user = await this.#deps.api.findUser(name.trim());
     if (user.kind !== 'ok') {
-      return user.kind === 'not-found' ? `No user named "${name.trim()}".` : messageOf(user);
+      return user.kind === 'not-found' ? messages().noUserNamed(name.trim()) : messageOf(user);
     }
     this.#names.set(user.value.id, user.value.name);
     const added = await this.#deps.api.addMember(roomId, user.value.id);
@@ -252,14 +254,14 @@ export class ChatController {
     const self = this.#deps.user.name;
     const names = parseMemberNames(memberNames).filter((member) => member !== self);
     if (names.length === 0) {
-      return 'Add at least one other member.';
+      return messages().addAtLeastOneMember;
     }
     const lookups = await Promise.all(names.map(async (member) => this.#deps.api.findUser(member)));
     const ids: number[] = [];
     for (const [index, lookup] of lookups.entries()) {
       if (lookup.kind !== 'ok') {
         return lookup.kind === 'not-found'
-          ? `No user named "${names[index] ?? ''}".`
+          ? messages().noUserNamed(names[index] ?? '')
           : messageOf(lookup);
       }
       this.#names.set(lookup.value.id, lookup.value.name);
@@ -291,7 +293,7 @@ export class ChatController {
   async leaveRoom(): Promise<null | string> {
     const roomId = this.#activeRoomId;
     if (roomId === null) {
-      return 'Open a room first.';
+      return messages().openRoomFirst;
     }
     const left = await this.#deps.api.leaveRoom(roomId);
     if (left.kind !== 'ok') {
@@ -405,7 +407,7 @@ export class ChatController {
       matches.map((message) => ({
         id: message.id,
         roomId: message.roomId,
-        roomName: this.#rooms.get(message.roomId)?.name ?? 'Unknown room',
+        roomName: this.#rooms.get(message.roomId)?.name ?? messages().unknownRoom,
         sender: displayName(message.senderId, this.#selfId, this.#names),
         text: message.text,
         timeLabel: this.#deps.formatTime(message.createdAt),
@@ -605,7 +607,7 @@ export class ChatController {
     if (!texts) {
       texts = this.#deps.store
         .listByRoom(roomId)
-        .then((messages) => new Map(messages.map((message) => [message.id, message.text])))
+        .then((stored) => new Map(stored.map((message) => [message.id, message.text])))
         .catch(() => new Map<string, string>());
       this.#localTexts.set(roomId, texts);
     }
@@ -663,7 +665,9 @@ export class ChatController {
       this.#renderMessages(roomId);
     }
     const reason =
-      stop.reason === 'rejected' ? stop.error.message : 'The room is no longer available.';
+      stop.reason === 'rejected'
+        ? translateServerMessage(stop.error.message)
+        : messages().roomUnavailable;
     this.#deps.view.notify(`A message was not sent: ${reason}`);
     this.#flusher.onReady();
   }
@@ -1005,9 +1009,9 @@ export class ChatController {
 
 function messageOf(outcome: { readonly kind: string; readonly message?: string }): string {
   if (outcome.kind === 'rate-limited') {
-    return 'Too many requests. Please wait a moment.';
+    return messages().tooManyRequests;
   }
-  return outcome.message ?? 'Something went wrong. Please try again.';
+  return outcome.message ?? messages().genericError;
 }
 
 function toEntry(message: MessageView, text: null | string): MessageEntry {

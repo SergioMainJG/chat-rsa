@@ -6,6 +6,7 @@ import { composeApp } from './app.composition.ts';
 import { loadConfig } from './shared/config/env.config.ts';
 import { createPostgresClient } from './shared/database/postgres.config.ts';
 import { createServer } from './shared/http/app.server.ts';
+import { buildPages } from './shared/http/static-pages.ts';
 import { installShutdown } from './shared/lifecycle/lifecycle.shutdown.ts';
 import { applyUserSchema } from './user/infrastructure/user.schema.ts';
 import { Argon2PasswordHasher } from './user/infrastructure/user.security.argon2.ts';
@@ -31,10 +32,17 @@ const { auth, messaging } = composeApp({
   tokens: new JoseTokenIssuer(config.jwtSecret),
 });
 
+const development = Bun.env.NODE_ENV !== 'production';
 const server = createServer({
   auth,
-  development: Bun.env.NODE_ENV !== 'production',
+  development,
   messaging,
+  // Production bundles the pages once so they carry security headers and are precompressed;
+  // development serves the HTML imports with hot reload.
+  // The first allowed origin is the public one: canonical and hreflang URLs point at it.
+  ...(development
+    ? {}
+    : { pages: await buildPages(config.appOrigins[0] ?? `http://localhost:${config.port}`) }),
   port: config.port,
 });
 

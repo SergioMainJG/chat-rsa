@@ -1,7 +1,9 @@
 // Browser entry of the auth pages: the only JS on them. Native validation runs first (the submit
 // event fires only for a valid form); the API accepts JSON only, so the form is sent with fetch.
+import { messages } from '../i18n/i18n.messages.ts';
+import { flagServerError, installFieldValidity } from '../shared/form-validity.ts';
 import { enforceAccess, revealPage } from './auth.page-guard.ts';
-import { credentialsFrom, GENERIC_ERROR, outcomeOf } from './presentation/auth.view.ts';
+import { credentialsFrom, outcomeOf } from './presentation/auth.view.ts';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -37,12 +39,13 @@ function setBusy(form: HTMLFormElement, busy: boolean): void {
 
 /**
  * Shows a server message under the field and marks it invalid through native validity, so CSS
- * styles it.
+ * styles it, and through `aria-invalid`, so assistive technology hears it.
  */
 function showFieldError(form: HTMLFormElement, field: string, message: string): void {
   const input = form.elements.namedItem(field);
   if (input instanceof HTMLInputElement) {
     input.setCustomValidity(message);
+    flagServerError(input);
   }
   const output = form.querySelector<HTMLElement>(`[data-error-for="${field}"]`);
   if (output) {
@@ -72,6 +75,7 @@ async function submit(form: HTMLFormElement): Promise<void> {
   const credentials = credentialsFrom(new FormData(form));
   clearMessages(form);
   setBusy(form, true);
+  let firstRefused: HTMLInputElement | null = null;
   try {
     const response = await fetch(form.action, {
       body: JSON.stringify(credentials),
@@ -88,6 +92,7 @@ async function submit(form: HTMLFormElement): Promise<void> {
     for (const [field, message] of Object.entries(outcome.fieldErrors)) {
       showFieldError(form, field, message);
     }
+    firstRefused = form.querySelector<HTMLInputElement>('input[aria-invalid="true"]');
     const formMessage = form.querySelector<HTMLElement>('[data-form-message]');
     if (formMessage) {
       formMessage.textContent = outcome.message;
@@ -95,15 +100,19 @@ async function submit(form: HTMLFormElement): Promise<void> {
   } catch {
     const formMessage = form.querySelector<HTMLElement>('[data-form-message]');
     if (formMessage) {
-      formMessage.textContent = GENERIC_ERROR;
+      formMessage.textContent = messages().genericError;
     }
   } finally {
     setBusy(form, false);
   }
+  // Only once the fieldset is enabled again: a disabled field cannot take focus. Focus reads the
+  // field's error message along with it.
+  firstRefused?.focus();
 }
 
 const authForm = document.querySelector<HTMLFormElement>('[data-auth-form]');
 if (authForm) {
+  installFieldValidity();
   authForm.addEventListener('submit', (event) => {
     event.preventDefault();
     void submit(authForm);

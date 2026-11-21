@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test';
 import { ConflictError, TooManyRequestsError } from '../domain/app.error.ts';
 import { errorResponse } from './http.error-response.ts';
 import { PayloadTooLargeError } from './http.json-body.ts';
+import { SECURITY_HEADERS } from './security-headers.ts';
 
 const request = new Request('http://localhost/api/x');
 
@@ -18,7 +19,9 @@ test('other errors carry no Retry-After', () => {
   const response = errorResponse(request, new ConflictError('x'));
 
   expect(response.headers.get('retry-after')).toBeNull();
-  expect([...response.headers.keys()].toSorted()).toEqual(['content-type', 'x-correlation-id']);
+  expect([...response.headers.keys()].toSorted()).toEqual(
+    ['content-type', 'x-correlation-id', ...Object.keys(SECURITY_HEADERS).map((name) => name.toLowerCase())].toSorted(),
+  );
 });
 
 test('a 413 is labelled Payload Too Large', async () => {

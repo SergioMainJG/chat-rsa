@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { connectionBannerText, mergeStatus, STATUS_LABEL } from './chat.status.ts';
+import { setLocaleFromLang } from '../../i18n/i18n.messages.ts';
+import { connectionBannerText, mergeStatus, statusLabel } from './chat.status.ts';
 
 describe('mergeStatus', () => {
   test('the rendered status never moves backwards', () => {
@@ -23,9 +24,24 @@ describe('mergeStatus', () => {
   });
 });
 
-describe('STATUS_LABEL', () => {
+describe('statusLabel', () => {
   test('labels every local status', () => {
-    expect(STATUS_LABEL).toEqual({ delivered: 'Delivered', pending: 'Pending', read: 'Read', sent: 'Sent' });
+    expect((['delivered', 'pending', 'read', 'sent'] as const).map((status) => statusLabel(status))).toEqual([
+      'Delivered',
+      'Pending',
+      'Read',
+      'Sent',
+    ]);
+  });
+
+  test('follows the page language', () => {
+    setLocaleFromLang('es');
+    try {
+      expect(statusLabel('read')).toBe('Leído');
+      expect(connectionBannerText('reconnecting')).toBe('Se perdió la conexión. Reconectando…');
+    } finally {
+      setLocaleFromLang('en');
+    }
   });
 });
 

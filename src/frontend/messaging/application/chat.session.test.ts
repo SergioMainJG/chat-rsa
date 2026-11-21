@@ -51,7 +51,7 @@ describe('bootstrapSession', () => {
     });
 
     expect(result).toEqual({ kind: 'redirected' });
-    expect(navigated).toEqual(['/sign-in']);
+    expect(navigated).toEqual(['/en/sign-in']);
     expect(calls).toEqual([]);
   });
 
@@ -68,7 +68,7 @@ describe('bootstrapSession', () => {
     });
 
     expect(result).toEqual({ kind: 'redirected' });
-    expect(navigated).toEqual(['/sign-in']);
+    expect(navigated).toEqual(['/en/sign-in']);
     expect(hint.live).toBe(false);
   });
 

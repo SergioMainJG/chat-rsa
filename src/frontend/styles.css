@@ -13,6 +13,8 @@
   --color-surface: #ffffff;
   --color-surface-soft: #ece9fb;
   --color-surface-line: #dddbea;
+  /* Boundary of a control on white: 4:1, above the 3:1 WCAG 1.4.11 asks of a UI component. */
+  --color-surface-control-line: #7f7b9c;
   --color-on-surface: #000000;
   --color-on-surface-muted: #4a4766;
   --color-accent: #473dc6;
@@ -98,6 +100,25 @@ a {
 :where(a, button, input, textarea, select, summary):focus-visible {
   outline: 3px solid var(--color-ok);
   outline-offset: 2px;
+}
+
+/* "Skip to content": off screen until focused, then the first thing on the page. */
+.skip-link {
+  position: absolute;
+  z-index: 10;
+  top: var(--space-2);
+  left: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
+  font-weight: 600;
+  text-decoration: none;
+  translate: 0 calc(-100% - 2 * var(--space-2));
+}
+
+.skip-link:focus {
+  translate: 0;
 }
 
 .visually-hidden {

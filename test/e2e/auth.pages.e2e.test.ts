@@ -15,10 +15,17 @@ async function page(path: string): Promise<{ readonly html: string; readonly res
   return { html: await response.text(), response };
 }
 
+const TOGGLE = {
+  en: { hide: 'Hide password', show: 'Show password' },
+  es: { hide: 'Ocultar contraseña', show: 'Mostrar contraseña' },
+} as const;
+
 describe.each([
-  ['/sign-in', '/api/auth/sign-in', 'current-password', 'Sign in'],
-  ['/sign-up', '/api/auth/sign-up', 'new-password', 'Create account'],
-] as const)('GET %s', (path, action, passwordAutocomplete, heading) => {
+  ['/en/sign-in', '/api/auth/sign-in', 'current-password', 'Sign in', 'en'],
+  ['/en/sign-up', '/api/auth/sign-up', 'new-password', 'Create account', 'en'],
+  ['/es/sign-in', '/api/auth/sign-in', 'current-password', 'Entrar', 'es'],
+  ['/es/sign-up', '/api/auth/sign-up', 'new-password', 'Crear cuenta', 'es'],
+] as const)('GET %s', (path, action, passwordAutocomplete, heading, locale) => {
   test('serves an HTML page', async () => {
     const { response } = await page(path);
 
@@ -46,8 +53,10 @@ describe.each([
     expect(html).toMatch(
       /<button[^>]*type="button"[^>]*aria-controls="password"[^>]*aria-pressed="false"[^>]*data-password-toggle/u,
     );
-    expect(html).toMatch(/data-password-toggle[^>]*>\s*<span class="when-hidden">Show password<\/span>/u);
-    expect(html).toMatch(/<span class="when-shown">Hide password<\/span>/u);
+    expect(html).toMatch(
+      new RegExp(`data-password-toggle[^>]*>\\s*<span class="when-hidden">${TOGGLE[locale].show}</span>`, 'u'),
+    );
+    expect(html).toContain(`<span class="when-shown">${TOGGLE[locale].hide}</span>`);
   });
 
   test('loads the bundled form script as a module', async () => {
@@ -57,10 +66,10 @@ describe.each([
   });
 });
 
-test('the sign-in and sign-up pages link to each other', async () => {
-  const signIn = await page('/sign-in');
-  const signUp = await page('/sign-up');
+test.each(['en', 'es'])('the %s sign-in and sign-up pages link to each other', async (locale) => {
+  const signIn = await page(`/${locale}/sign-in`);
+  const signUp = await page(`/${locale}/sign-up`);
 
-  expect(signIn.html).toContain('href="/sign-up"');
-  expect(signUp.html).toContain('href="/sign-in"');
+  expect(signIn.html).toContain(`href="/${locale}/sign-up"`);
+  expect(signUp.html).toContain(`href="/${locale}/sign-in"`);
 });
