@@ -56,6 +56,10 @@ describe('message encryption with a chain key', () => {
       { ...payload, iv: tamper(payload.iv) },
       { ...payload, authTag: tamper(payload.authTag) },
       { ...payload, iv: 'not base64!' },
+      { ...payload, ciphertext: 'not base64!' },
+      { ...payload, authTag: 'not base64!' },
+      // Same bytes, non-canonical encoding: the wire format is strict base64 with its padding.
+      { ...payload, authTag: payload.authTag.replace(/[=]+$/u, '') },
     ];
     for (const candidate of tampered) {
       // eslint-disable-next-line no-await-in-loop -- each case is checked in order

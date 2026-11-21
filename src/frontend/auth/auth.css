@@ -72,7 +72,7 @@
   inline-size: 100%;
   min-inline-size: 0;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-surface-line);
+  border: 1px solid var(--color-surface-control-line);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-on-surface);
@@ -178,10 +178,14 @@
   gap: var(--space-2);
 }
 
+/* Both labels share one grid cell and the hidden one keeps its space (visibility, not display),
+   so the toggle is as wide as its longest label and the input never resizes when it flips. */
 .password-toggle {
+  display: inline-grid;
+  place-items: center;
   min-block-size: var(--target-min);
   padding-inline: var(--space-4);
-  border: 1px solid var(--color-surface-line);
+  border: 1px solid var(--color-surface-control-line);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   color: var(--color-accent);
@@ -202,9 +206,13 @@
   background: var(--color-surface-soft);
 }
 
+.password-toggle > span {
+  grid-area: 1 / 1;
+}
+
 .password-toggle[aria-pressed='false'] .when-shown,
 .password-toggle[aria-pressed='true'] .when-hidden {
-  display: none;
+  visibility: hidden;
 }
 
 .switch {
@@ -271,5 +279,18 @@
 
   .auth-form fieldset {
     gap: var(--space-4);
+  }
+}
+
+/* Forced colors (Windows High Contrast) drop box-shadow and repaint every border in one color, so
+   the accent edge of the focus ring and the red of an invalid field would be lost. */
+@media (forced-colors: active) {
+  .auth-panel :where(a, button, input):focus-visible {
+    outline-color: Highlight;
+  }
+
+  .field input:user-invalid {
+    border-width: 3px;
+    border-style: dashed;
   }
 }

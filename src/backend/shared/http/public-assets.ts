@@ -2,6 +2,8 @@
 // look for them. Only these files are published: public/ also holds design sources (the mockup,
 // the full-size logo) that must not be served.
 
+import { SECURITY_HEADERS } from './security-headers.ts';
+
 const PUBLIC_DIR = new URL('../../../../public/', import.meta.url);
 const ONE_DAY_SECONDS = 86_400;
 
@@ -14,6 +16,7 @@ const PUBLIC_FILES: Readonly<Record<string, null | string>> = {
   'favicon-32x32.png': null,
   'favicon.ico': 'image/x-icon',
   'favicon.svg': 'image/svg+xml',
+  'robots.txt': 'text/plain; charset=utf-8',
   'site.webmanifest': 'application/manifest+json',
 };
 
@@ -22,6 +25,7 @@ export function publicAssetRoutes(): Record<string, () => Response> {
     Object.entries(PUBLIC_FILES).map(([name, type]) => {
       const file = Bun.file(new URL(name, PUBLIC_DIR));
       const headers: Record<string, string> = {
+        ...SECURITY_HEADERS,
         'Cache-Control': `public, max-age=${ONE_DAY_SECONDS}`,
         ...(type === null ? {} : { 'Content-Type': type }),
       };

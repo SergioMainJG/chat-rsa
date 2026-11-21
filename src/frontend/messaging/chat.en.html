@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Your end-to-end encrypted Komwasai chats." />
+    <meta name="robots" content="noindex" />
     <!-- CSP as a meta tag: Bun route handlers cannot return HTML imports, so it cannot be a header.
          The hash is the route guard's inline style (the same on every guarded page), byte for
          byte; change one, update the other (test/e2e/pages.csp.e2e.test.ts checks it). -->
@@ -35,41 +37,48 @@
     <script type="module" src="./chat.page.ts"></script>
   </head>
   <body class="chat-body">
+    <a class="skip-link" href="#composer-text">Skip to the message box</a>
     <div class="chat">
       <header class="site-header chat-header">
-        <a class="brand" href="/">
-          <img class="brand-mark" src="../assets/isotipo-96.png" alt="" width="32" height="32" />
+        <a class="brand" href="/en">
+          <img class="brand-mark" src="../assets/isotipo-96.webp" alt="" width="32" height="32" />
           <span class="brand-name">Komwasai</span>
         </a>
         <h1 class="visually-hidden">Chat</h1>
         <p class="banner" role="status" data-connection-banner data-state="connecting"></p>
         <div class="header-nav">
-          <a class="button-pill banner-action" href="/sign-in" data-sign-in-link hidden>Sign in</a>
+          <a
+            class="link-quiet lang-switch"
+            href="/chat?lang=es"
+            hreflang="es"
+            lang="es"
+            data-lang-switch
+            >Español</a
+          >
+          <a class="button-pill banner-action" href="/en/sign-in" data-sign-in-link hidden
+            >Sign in</a
+          >
           <button type="button" class="sign-out" data-sign-out>Sign out</button>
         </div>
       </header>
 
-      <!-- Narrow screens show the rooms list or the open room, never both. This checkbox (drawn by
-           its labels, no script) switches to the list while a room is open. -->
-      <input
-        type="checkbox"
-        class="rooms-toggle visually-hidden"
-        id="rooms-toggle"
-        aria-label="Show the rooms list"
-      />
-
-      <aside class="sidebar" aria-label="Rooms">
+      <!-- Narrow screens show the rooms list or the open room, never both. The two rooms-switch
+           buttons (shown only there) flip `data-show-rooms` on the chat and move focus. -->
+      <aside class="sidebar" id="rooms-sidebar" aria-label="Rooms">
         <div class="sidebar-head">
-          <h2 id="rooms-title">Rooms</h2>
-          <label class="rooms-toggle-label rooms-back" for="rooms-toggle">Back to the room</label>
+          <h2 id="rooms-title" tabindex="-1">Rooms</h2>
+          <button type="button" class="rooms-switch rooms-back" data-show-room>
+            Back to the room
+          </button>
         </div>
         <ul class="rooms" data-rooms></ul>
         <p class="hint rooms-empty">No rooms yet. Create one below.</p>
 
         <details class="panel">
           <summary>New room</summary>
-          <form class="stack" data-create-room-form>
+          <form class="stack" aria-label="New room" data-create-room-form>
             <fieldset>
+              <legend class="visually-hidden">New room</legend>
               <div class="field">
                 <label for="room-name">Room name</label>
                 <input
@@ -91,6 +100,7 @@
                   pattern="[\p{L}\p{N}]+(?:[\s,]+[\p{L}\p{N}]+)*[\s,]*"
                   autocomplete="off"
                   autocapitalize="none"
+                  autocorrect="off"
                   spellcheck="false"
                   aria-describedby="room-members-hint"
                 />
@@ -105,7 +115,7 @@
         </details>
 
         <search class="panel">
-          <form class="stack" data-search-form>
+          <form class="stack" aria-label="Search messages" data-search-form>
             <div class="field">
               <label for="search-query">Search messages</label>
               <input
@@ -127,9 +137,17 @@
 
       <main class="room" data-room-panel hidden>
         <header class="room-header">
-          <label class="rooms-toggle-label rooms-open" for="rooms-toggle">Rooms</label>
+          <button
+            type="button"
+            class="rooms-switch rooms-open"
+            aria-controls="rooms-sidebar"
+            aria-expanded="false"
+            data-show-rooms
+          >
+            Rooms
+          </button>
           <div class="room-title">
-            <h2 data-room-name></h2>
+            <h2 tabindex="-1" data-room-name></h2>
             <p class="tag">End-to-end encrypted</p>
           </div>
           <ul class="members" data-members aria-label="Members"></ul>
@@ -137,11 +155,24 @@
             <ul data-key-warning-list></ul>
             <button type="button" data-trust-keys>Trust new key</button>
           </div>
-          <details class="room-actions">
-            <summary>Manage room</summary>
-            <div class="room-actions-panel">
-              <form class="stack" data-add-member-form>
+          <div class="room-actions">
+            <button
+              type="button"
+              class="room-actions-trigger"
+              popovertarget="room-actions-panel"
+              data-room-actions-trigger
+            >
+              Manage room
+            </button>
+            <div
+              class="room-actions-panel"
+              id="room-actions-panel"
+              popover="auto"
+              data-room-actions
+            >
+              <form class="stack" aria-label="Add member" data-add-member-form>
                 <fieldset>
+                  <legend class="visually-hidden">Add member</legend>
                   <div class="field">
                     <label for="member-name">Add member</label>
                     <input
@@ -153,6 +184,7 @@
                       pattern="[\p{L}\p{N}]+"
                       autocomplete="off"
                       autocapitalize="none"
+                      autocorrect="off"
                       spellcheck="false"
                     />
                   </div>
@@ -162,7 +194,7 @@
               </form>
               <button type="button" class="danger" data-leave-room>Leave room</button>
             </div>
-          </details>
+          </div>
         </header>
 
         <div class="messages-scroller" data-messages-scroller>
@@ -171,9 +203,9 @@
           <p class="hint messages-empty">No messages yet. Say hello.</p>
         </div>
 
-        <p class="typing" data-typing></p>
+        <p class="typing" role="status" data-typing></p>
 
-        <form class="composer" data-composer>
+        <form class="composer" aria-label="Send a message" data-composer>
           <label class="visually-hidden" for="composer-text">Message</label>
           <textarea
             id="composer-text"

@@ -30,15 +30,19 @@ async function page(path: string): Promise<string> {
 }
 
 describe('guarded pages', () => {
-  test.each(['/chat', '/sign-in', '/sign-up'])('%s ships hidden, with the hiding rule inline', async (path) => {
-    const html = await page(path);
+  test.each(['/es/chat', '/en/chat', '/es/sign-in', '/en/sign-in', '/es/sign-up', '/en/sign-up'])(
+    '%s ships hidden, with the hiding rule inline',
+    async (path) => {
+      const html = await page(path);
 
-    expect(html).toMatch(GUARD_ATTRIBUTE);
-    expect(html).toMatch(INLINE_GUARD_RULE);
-    expect(html.indexOf('<style>')).toBeLessThan(html.indexOf('<link rel="stylesheet"'));
-  });
+      expect(html).toMatch(GUARD_ATTRIBUTE);
+      expect(html).toMatch(INLINE_GUARD_RULE);
+      expect(html.indexOf('<style>')).toBeLessThan(html.indexOf('<link rel="stylesheet"'));
+    },
+  );
 
   test('the public home page is not guarded', async () => {
-    expect(await page('/')).not.toMatch(GUARD_ATTRIBUTE);
+    expect(await page('/es')).not.toMatch(GUARD_ATTRIBUTE);
+    expect(await page('/en')).not.toMatch(GUARD_ATTRIBUTE);
   });
 });

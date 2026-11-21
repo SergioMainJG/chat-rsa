@@ -189,6 +189,7 @@ describe('bearerTokenOf', () => {
     ['Basic abc', null],
     ['Bearer ', null],
     ['Bearer a b', null],
+    ['Foo Bearer abc', null],
   ])('reads %p as %p', (header, expected) => {
     expect(bearerTokenOf(new Request('http://localhost/', { headers: { authorization: header } }))).toBe(expected);
   });
@@ -280,6 +281,9 @@ describe('client IP (TRUSTED_PROXY_IPS + CF-Connecting-IP)', () => {
       expect(status).toBe(200);
       const again = await route(request('GET', { 'cf-connecting-ip': header }), serverAt(PROXY));
       expect(again.status).toBe(429);
+      // A different invalid header is not a bucket of its own: it is still the proxy's bucket.
+      const other = await route(request('GET', { 'cf-connecting-ip': 'other-garbage' }), serverAt(PROXY));
+      expect(other.status).toBe(429);
     },
   );
 

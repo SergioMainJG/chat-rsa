@@ -216,7 +216,7 @@ body.chat-body {
 }
 
 .panel summary,
-.room-actions summary {
+.room-actions-trigger {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -228,13 +228,12 @@ body.chat-body {
   cursor: pointer;
 }
 
-.panel summary::-webkit-details-marker,
-.room-actions summary::-webkit-details-marker {
+.panel summary::-webkit-details-marker {
   display: none;
 }
 
 .panel summary::after,
-.room-actions summary::after {
+.room-actions-trigger::after {
   content: '';
   width: 16px;
   height: 16px;
@@ -244,7 +243,7 @@ body.chat-body {
 }
 
 .panel[open] summary::after,
-.room-actions[open] summary::after {
+.room-actions:has(.room-actions-panel:is(:popover-open, [data-open])) .room-actions-trigger::after {
   rotate: 180deg;
 }
 
@@ -302,6 +301,21 @@ body.chat-body {
 .chat input:user-invalid,
 .chat textarea:user-invalid {
   border-color: var(--color-danger);
+}
+
+/* Forced colors repaint every border in one color: an invalid field keeps a thicker, dashed one.
+   The typing dots are a gradient, which forced colors drop, so they are drawn in the text color. */
+@media (forced-colors: active) {
+  .chat input:user-invalid,
+  .chat textarea:user-invalid {
+    border-width: 3px;
+    border-style: dashed;
+  }
+
+  .typing::before {
+    forced-color-adjust: none;
+    background-image: radial-gradient(circle, CanvasText 2.5px, transparent 3px);
+  }
 }
 
 .chat :disabled {
@@ -509,35 +523,60 @@ body.chat-body {
   margin-left: auto;
 }
 
-.room-actions summary {
+.room-actions-trigger {
   padding-inline: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
 }
 
-.room-actions summary:hover {
+.room-actions-trigger:hover {
   border-color: var(--color-ink-subtle);
 }
 
-.room-actions summary:focus-visible {
+.room-actions-trigger:focus-visible {
   border-radius: var(--radius-pill);
 }
 
-/* Opens as a panel over the messages instead of pushing them down. */
+/* A popover: in the top layer over the messages, closed by Escape or a click outside. Its display
+   is set only while open, or it would override the popover's own `display: none` when closed.
+   Without anchor positioning (Firefox) the browser centers it in the viewport. Without popovers
+   at all, the trigger toggles `data-open`. */
 .room-actions-panel {
-  position: absolute;
-  z-index: 2;
-  top: calc(100% + var(--space-2));
-  right: var(--space-5);
-  display: grid;
+  display: none;
   gap: var(--space-4);
   justify-items: start;
-  width: min(22rem, 100% - 2 * var(--space-5));
+  width: min(22rem, 100vw - 2 * var(--space-5));
   padding: var(--space-4) var(--space-5) var(--space-5);
   border: 1px solid var(--line);
   border-radius: var(--radius-panel);
   background: var(--color-field-raised);
   box-shadow: 0 24px 48px -24px rgb(4 2 30 / 0.8);
+  color: var(--color-ink);
+}
+
+.room-actions-panel:is(:popover-open, [data-open]) {
+  display: grid;
+}
+
+.room-actions-panel::backdrop {
+  background: transparent;
+}
+
+/* Under the trigger, its end edge aligned with the trigger's; flipped when it would overflow. */
+@supports (position-area: block-end) {
+  .room-actions-panel {
+    inset: auto;
+    margin: var(--space-2) 0 0;
+    position-area: block-end span-inline-start;
+    position-try-fallbacks:
+      flip-block,
+      flip-inline,
+      flip-block flip-inline;
+  }
 }
 
 .room-actions-panel form {
@@ -809,8 +848,18 @@ body.chat-body {
   max-height: 12rem;
   padding: var(--space-3) var(--space-4);
   border-radius: 20px;
-  resize: none;
   field-sizing: content;
+}
+
+/* Grows with its text where field-sizing works; elsewhere the user can still drag it taller. */
+.chat .composer textarea {
+  resize: vertical;
+}
+
+@supports (field-sizing: content) {
+  .chat .composer textarea {
+    resize: none;
+  }
 }
 
 .composer-send {
@@ -825,9 +874,13 @@ body.chat-body {
   color: var(--color-danger);
 }
 
-/* The rooms toggle exists only on narrow screens. */
-.rooms-toggle,
-.rooms-toggle-label {
+/* The skip link jumps to the message box, so it exists only while that box is on screen. */
+.chat-body:has(.room[hidden], .chat[data-show-rooms]) .skip-link {
+  display: none;
+}
+
+/* The rooms switches exist only on narrow screens. */
+.rooms-switch {
   display: none;
 }
 
@@ -883,16 +936,12 @@ body.chat-body {
     display: none;
   }
 
-  .chat:has(.room:not([hidden])):not(:has(.rooms-toggle:checked)) .sidebar,
-  .chat:has(.rooms-toggle:checked) .room {
+  .chat:has(.room:not([hidden])):not([data-show-rooms]) .sidebar,
+  .chat[data-show-rooms] .room {
     display: none;
   }
 
-  .rooms-toggle {
-    display: block;
-  }
-
-  .rooms-toggle-label {
+  .rooms-switch {
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);
@@ -900,14 +949,16 @@ body.chat-body {
     padding-inline: var(--space-2) var(--space-3);
     border: 1px solid var(--line);
     border-radius: var(--radius-pill);
+    background: transparent;
     color: var(--color-ink);
+    font: inherit;
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
 
-  .rooms-toggle-label::before {
+  .rooms-switch::before {
     content: '';
     width: 16px;
     height: 16px;
@@ -927,11 +978,6 @@ body.chat-body {
   /* "Back to the room" only while a room is open behind the list. */
   .chat:not(:has(.room:not([hidden]))) .rooms-back {
     display: none;
-  }
-
-  .chat:has(.rooms-toggle:focus-visible) .rooms-toggle-label {
-    outline: 3px solid var(--color-ok);
-    outline-offset: 2px;
   }
 
   .room-header {
@@ -983,7 +1029,7 @@ body.chat-body {
     margin-left: 0;
   }
 
-  .room-actions summary {
+  .room-actions-trigger {
     padding-inline: var(--space-3);
     font-size: 0.875rem;
   }
@@ -997,8 +1043,7 @@ body.chat-body {
   }
 
   .room-actions-panel {
-    right: var(--space-4);
-    width: calc(100% - 2 * var(--space-4));
+    width: calc(100vw - 2 * var(--space-4));
   }
 
   .messages-scroller {

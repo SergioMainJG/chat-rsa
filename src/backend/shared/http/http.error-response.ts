@@ -1,6 +1,7 @@
 import type { ErrorResponse } from '../../../shared/contracts/error.contract.ts';
 
 import { type AppError, TooManyRequestsError } from '../domain/app.error.ts';
+import { SECURITY_HEADERS } from './security-headers.ts';
 
 export const CORRELATION_HEADER = 'x-correlation-id';
 
@@ -39,6 +40,7 @@ export function errorResponse(request: Request, error: AppError, now = new Date(
   };
   return Response.json(body, {
     headers: {
+      ...SECURITY_HEADERS,
       [CORRELATION_HEADER]: correlationId,
       ...(error instanceof TooManyRequestsError && {
         'retry-after': String(error.retryAfterSeconds),

@@ -12,13 +12,25 @@ import type {
 } from '../../user/presentation/user.controller.ts';
 import type { GuardedRoute, Guards } from './http.guard.ts';
 
-import signInPage from '../../../frontend/auth/sign-in.html';
-import signUpPage from '../../../frontend/auth/sign-up.html';
-import index from '../../../frontend/index.html';
-import chatPage from '../../../frontend/messaging/chat.html';
+import signInEn from '../../../frontend/auth/sign-in.en.html';
+import signInEs from '../../../frontend/auth/sign-in.es.html';
+import signUpEn from '../../../frontend/auth/sign-up.en.html';
+import signUpEs from '../../../frontend/auth/sign-up.es.html';
+import indexEn from '../../../frontend/index.en.html';
+import indexEs from '../../../frontend/index.es.html';
+import chatEn from '../../../frontend/messaging/chat.en.html';
+import chatEs from '../../../frontend/messaging/chat.es.html';
 import { SOCKET_PATH } from '../../../shared/contracts/messaging.socket.contract.ts';
+import {
+  type Locale,
+  localePath,
+  LOCALES,
+  type Page,
+  PAGES,
+} from '../../../shared/i18n/i18n.locale.ts';
 import { NotFoundError } from '../domain/app.error.ts';
 import { errorResponse } from './http.error-response.ts';
+import { localeRedirectRoutes } from './locale-redirect.ts';
 import { publicAssetRoutes } from './public-assets.ts';
 
 /** Everything the messaging feature mounts: REST routes behind the guards, and `/ws`. */
@@ -36,6 +48,11 @@ export type ServerDependencies = {
   readonly development?: boolean;
   /** Absent in tests that only exercise sign-in and sign-up. */
   readonly messaging?: MessagingServerDependencies;
+  /**
+   * Pages prebuilt by `buildPages` (production). Absent, the HTML imports are served as they are,
+   * with hot reload in development but without the security headers.
+   */
+  readonly pages?: Readonly<Record<string, (request: Request) => Response>>;
   readonly port: number;
 };
 
@@ -53,6 +70,7 @@ export function createServer({
   auth,
   development = false,
   messaging,
+  pages,
   port,
 }: ServerDependencies): Bun.Server<SocketConnection> {
   return Bun.serve<SocketConnection>({
@@ -65,12 +83,10 @@ export function createServer({
     port,
     routes: {
       ...publicAssetRoutes(),
-      '/': index,
       '/api/auth/sign-in': { POST: messaging ? messaging.guards.public(auth.signIn) : auth.signIn },
       '/api/auth/sign-up': { POST: messaging ? messaging.guards.public(auth.signUp) : auth.signUp },
-      '/chat': chatPage,
-      '/sign-in': signInPage,
-      '/sign-up': signUpPage,
+      ...localeRedirectRoutes(),
+      ...(pages ?? htmlImportPages()),
       ...(messaging && messagingRoutes(messaging)),
     },
     websocket: messaging?.gateway.websocket ?? NO_SOCKETS,
@@ -118,4 +134,17 @@ function messagingRoutes({
       gateway.upgrade(request, server),
     ),
   };
+}
+
+/** The HTML imports, served as they are (hot reload in development), one route per locale page. */
+function htmlImportPages(): Record<string, Bun.HTMLBundle> {
+  const bundles: Record<Locale, Record<Page, Bun.HTMLBundle>> = {
+    en: { chat: chatEn, home: indexEn, 'sign-in': signInEn, 'sign-up': signUpEn },
+    es: { chat: chatEs, home: indexEs, 'sign-in': signInEs, 'sign-up': signUpEs },
+  };
+  return Object.fromEntries(
+    LOCALES.flatMap((locale) =>
+      PAGES.map((page) => [localePath(locale, page), bundles[locale][page]]),
+    ),
+  );
 }

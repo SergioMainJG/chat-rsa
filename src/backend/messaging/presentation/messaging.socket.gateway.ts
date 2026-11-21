@@ -499,8 +499,29 @@ class Gateway {
     return userId === null ? [] : [...(this.byUser.get(userId) ?? [])];
   }
 
+  /**
+   * Runs a membership lookup again until no removal reached the socket while it was in flight: a
+   * leave that lands before `join` has nothing to unsubscribe, so a stale answer would re-subscribe
+   * a user who already left.
+   */
+  private async freshMembership<T>(ws: Socket, lookup: () => Promise<T>): Promise<T> {
+    let seen = ws.data.removals;
+    let result = await lookup();
+    while (ws.data.removals !== seen) {
+      seen = ws.data.removals;
+      // eslint-disable-next-line no-await-in-loop -- each retry must see the removals before it
+      result = await lookup();
+    }
+    return result;
+  }
+
   private async subscribe(ws: Socket, input: Input): Promise<void> {
-    const room = await roomOfMember(this.deps.rooms, input.roomId, ws.data.userId);
+    const room = await this.freshMembership(ws, async () =>
+      roomOfMember(this.deps.rooms, input.roomId, ws.data.userId),
+    );
+    if (ws.data.isReleased) {
+      return;
+    }
     if (!room.ok) {
       this.fail(ws, room.error, refOf({ input, type: 'room.subscribe' }));
       return;
@@ -554,7 +575,9 @@ class Gateway {
   /** Subscribes the new socket to the user's rooms, then sends `ready`, presence and snapshots. */
   private async welcome(ws: Socket): Promise<void> {
     const connection = ws.data;
-    const rooms = await this.deps.listRooms.execute(connection.userId);
+    const rooms = await this.freshMembership(ws, async () =>
+      this.deps.listRooms.execute(connection.userId),
+    );
     if (!rooms.ok) {
       this.fail(ws, rooms.error, null);
       return;

@@ -106,8 +106,8 @@ describe('home page (docs/design/home-page.md)', () => {
   test('offers one primary action, sign-up, and sign-in as a link', async () => {
     const html = await page('/');
     expect(html.match(/class="button-primary"/gu)).toHaveLength(1);
-    expect(html).toMatch(/<a class="button-primary" href="\/sign-up">Crear cuenta<\/a>/u);
-    expect(html).toContain('href="/sign-in"');
+    expect(html).toMatch(/<a class="button-primary" href="\/es\/sign-up">Crear cuenta<\/a>/u);
+    expect(html).toContain('href="/es/sign-in"');
     expect(html).not.toContain('Chatea ya');
   });
 
@@ -200,8 +200,54 @@ describe('shared visual system (odd/tasks/app-visual-system.md)', () => {
       const html = await page(path);
       const header = /<header class="site-header[^"]*"[\s\S]*?<\/header>/u.exec(html)?.[0] ?? '';
       expect(html.match(/<header class="site-header/gu)).toHaveLength(1);
-      expect(header).toMatch(/<a class="brand" href="\/"/u);
+      // `fetch` follows the redirect to the default locale, Spanish.
+      expect(header).toMatch(/<a class="brand" href="\/es"/u);
       expect(header).toContain('Komwasai');
     },
   );
+});
+
+describe('search engines and keyboard users', () => {
+  test('robots.txt keeps crawlers out of the chat and the API', async () => {
+    const response = await get('/robots.txt');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type') ?? '').toStartWith('text/plain');
+    const text = await response.text();
+    expect(text).toContain('User-agent: *');
+    expect(text).toContain('Disallow: /chat');
+    expect(text).toContain('Disallow: /api/');
+  });
+
+  test.each(['/', '/chat', '/sign-in', '/sign-up'])('%s has a description', async (path) => {
+    expect(await textOf(path)).toMatch(/<meta\s+name="description"\s+content="[^"]{40,}"/u);
+  });
+
+  test('only the chat asks not to be indexed', async () => {
+    expect(await textOf('/chat')).toMatch(/<meta\s+name="robots"\s+content="noindex"/u);
+    for (const path of ['/', '/sign-in', '/sign-up']) {
+      // eslint-disable-next-line no-await-in-loop -- three pages, checked one by one
+      expect(await textOf(path)).not.toContain('noindex');
+    }
+  });
+
+  test.each([
+    ['/', '#main', 'id="main"'],
+    ['/sign-in', '#main', 'id="main"'],
+    ['/sign-up', '#main', 'id="main"'],
+    ['/chat', '#composer-text', 'id="composer-text"'],
+  ])('%s opens with a skip link to %s', async (path, href, target) => {
+    const html = await textOf(path);
+    const body = html.slice(html.indexOf('<body'));
+    // The first link in the body, before the header.
+    expect(/<a\s[^>]*>/u.exec(body)?.[0]).toContain(`href="${href}"`);
+    expect(/<a\s[^>]*>/u.exec(body)?.[0]).toContain('class="skip-link"');
+    expect(html).toContain(target);
+  });
+
+  test.each(['/', '/chat', '/sign-in', '/sign-up'])('%s shows the logo as a square WebP', async (path) => {
+    const html = await textOf(path);
+    const logo = /<img\s[^>]*class="brand-mark"[^>]*>/u.exec(html)?.[0] ?? '';
+    expect(logo).toMatch(/src="[^"]+\.webp"/u);
+    expect(logo).not.toContain('.png');
+  });
 });

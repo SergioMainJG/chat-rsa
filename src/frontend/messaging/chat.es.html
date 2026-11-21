@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="es" data-guard="pending">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Tus chats de Komwasai, cifrados de extremo a extremo." />
+    <meta name="robots" content="noindex" />
+    <!-- CSP as a meta tag: Bun route handlers cannot return HTML imports, so it cannot be a header.
+         The hash is the route guard's inline style (the same on every guarded page), byte for
+         byte; change one, update the other (test/e2e/pages.csp.e2e.test.ts checks it). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'sha256-6gww4zzHl2TKVqiqTG1nIjYMh2+YyAKZjnuhGVHl30M='; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'"
+    />
+    <title>Chat · Komwasai</title>
+    <!-- Route guard (auth.page-guard.ts): inline so it applies before the first paint in every
+         browser, without waiting for a stylesheet. The script removes data-guard to reveal. -->
+    <style>
+      html[data-guard='pending'] body {
+        visibility: hidden;
+      }
+      @media (scripting: none) {
+        html[data-guard='pending'] body {
+          visibility: visible;
+        }
+      }
+    </style>
+    <link rel="icon" href="../../../public/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="../../../public/favicon-32x32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="../../../public/favicon-16x16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="../../../public/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="../../../public/site.webmanifest" />
+    <meta name="theme-color" content="#150E60" />
+    <link rel="stylesheet" href="../styles.css" />
+    <link rel="stylesheet" href="./chat.css" />
+    <link rel="expect" href="#rooms-title" blocking="render" />
+    <script type="module" src="./chat.page.ts"></script>
+  </head>
+  <body class="chat-body">
+    <a class="skip-link" href="#composer-text">Saltar al cuadro de mensaje</a>
+    <div class="chat">
+      <header class="site-header chat-header">
+        <a class="brand" href="/es">
+          <img class="brand-mark" src="../assets/isotipo-96.webp" alt="" width="32" height="32" />
+          <span class="brand-name">Komwasai</span>
+        </a>
+        <h1 class="visually-hidden">Chat</h1>
+        <p class="banner" role="status" data-connection-banner data-state="connecting"></p>
+        <div class="header-nav">
+          <a
+            class="link-quiet lang-switch"
+            href="/chat?lang=en"
+            hreflang="en"
+            lang="en"
+            data-lang-switch
+            >English</a
+          >
+          <a class="button-pill banner-action" href="/es/sign-in" data-sign-in-link hidden
+            >Entrar</a
+          >
+          <button type="button" class="sign-out" data-sign-out>Cerrar sesión</button>
+        </div>
+      </header>
+
+      <!-- Narrow screens show the rooms list or the open room, never both. The two rooms-switch
+           buttons (shown only there) flip `data-show-rooms` on the chat and move focus. -->
+      <aside class="sidebar" id="rooms-sidebar" aria-label="Salas">
+        <div class="sidebar-head">
+          <h2 id="rooms-title" tabindex="-1">Salas</h2>
+          <button type="button" class="rooms-switch rooms-back" data-show-room>
+            Volver a la sala
+          </button>
+        </div>
+        <ul class="rooms" data-rooms></ul>
+        <p class="hint rooms-empty">Aún no tienes salas. Crea una abajo.</p>
+
+        <details class="panel">
+          <summary>Nueva sala</summary>
+          <form class="stack" aria-label="Nueva sala" data-create-room-form>
+            <fieldset>
+              <legend class="visually-hidden">Nueva sala</legend>
+              <div class="field">
+                <label for="room-name">Nombre de la sala</label>
+                <input
+                  id="room-name"
+                  name="name"
+                  type="text"
+                  required
+                  maxlength="100"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="field">
+                <label for="room-members">Miembros</label>
+                <input
+                  id="room-members"
+                  name="members"
+                  type="text"
+                  required
+                  pattern="[\p{L}\p{N}]+(?:[\s,]+[\p{L}\p{N}]+)*[\s,]*"
+                  autocomplete="off"
+                  autocapitalize="none"
+                  autocorrect="off"
+                  spellcheck="false"
+                  aria-describedby="room-members-hint"
+                />
+                <p class="hint" id="room-members-hint">
+                  Nombres de usuario, separados por comas o espacios.
+                </p>
+              </div>
+              <p class="form-message" role="alert" data-form-message></p>
+              <button type="submit" class="button-pill">Crear sala</button>
+            </fieldset>
+          </form>
+        </details>
+
+        <search class="panel">
+          <form class="stack" aria-label="Buscar mensajes" data-search-form>
+            <div class="field">
+              <label for="search-query">Buscar mensajes</label>
+              <input
+                id="search-query"
+                name="query"
+                type="search"
+                autocomplete="off"
+                aria-describedby="search-hint"
+              />
+              <p class="hint" id="search-hint">
+                Solo busca en los mensajes descifrados en este dispositivo.
+              </p>
+            </div>
+          </form>
+          <ol class="search-results" data-search-results aria-label="Resultados de búsqueda"></ol>
+          <p class="hint search-empty" data-search-empty hidden>
+            No hay mensajes que coincidan en este dispositivo.
+          </p>
+        </search>
+      </aside>
+
+      <main class="room" data-room-panel hidden>
+        <header class="room-header">
+          <button
+            type="button"
+            class="rooms-switch rooms-open"
+            aria-controls="rooms-sidebar"
+            aria-expanded="false"
+            data-show-rooms
+          >
+            Salas
+          </button>
+          <div class="room-title">
+            <h2 tabindex="-1" data-room-name></h2>
+            <p class="tag">Cifrado de extremo a extremo</p>
+          </div>
+          <ul class="members" data-members aria-label="Miembros"></ul>
+          <div class="key-warnings" role="alert" data-key-warnings hidden>
+            <ul data-key-warning-list></ul>
+            <button type="button" data-trust-keys>Confiar en la nueva clave</button>
+          </div>
+          <div class="room-actions">
+            <button
+              type="button"
+              class="room-actions-trigger"
+              popovertarget="room-actions-panel"
+              data-room-actions-trigger
+            >
+              Administrar sala
+            </button>
+            <div
+              class="room-actions-panel"
+              id="room-actions-panel"
+              popover="auto"
+              data-room-actions
+            >
+              <form class="stack" aria-label="Agregar miembro" data-add-member-form>
+                <fieldset>
+                  <legend class="visually-hidden">Agregar miembro</legend>
+                  <div class="field">
+                    <label for="member-name">Agregar miembro</label>
+                    <input
+                      id="member-name"
+                      name="name"
+                      type="text"
+                      required
+                      maxlength="64"
+                      pattern="[\p{L}\p{N}]+"
+                      autocomplete="off"
+                      autocapitalize="none"
+                      autocorrect="off"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <p class="form-message" role="alert" data-form-message></p>
+                  <button type="submit" class="button-pill">Agregar</button>
+                </fieldset>
+              </form>
+              <button type="button" class="danger" data-leave-room>Salir de la sala</button>
+            </div>
+          </div>
+        </header>
+
+        <div class="messages-scroller" data-messages-scroller>
+          <button type="button" class="load-older" data-load-older>
+            Cargar mensajes anteriores
+          </button>
+          <ol class="messages" role="log" aria-label="Mensajes" data-messages></ol>
+          <p class="hint messages-empty">Aún no hay mensajes. Saluda.</p>
+        </div>
+
+        <p class="typing" role="status" data-typing></p>
+
+        <form class="composer" aria-label="Enviar un mensaje" data-composer>
+          <label class="visually-hidden" for="composer-text">Mensaje</label>
+          <textarea
+            id="composer-text"
+            name="text"
+            rows="2"
+            required
+            maxlength="4000"
+            placeholder="Escribe un mensaje. Enter envía, Mayús+Enter agrega una línea."
+            autocomplete="off"
+          ></textarea>
+          <button type="submit" class="button-primary composer-send">Enviar</button>
+        </form>
+      </main>
+
+      <section class="room-placeholder" data-room-placeholder>
+        <p>Elige una sala, o crea una, para empezar a chatear.</p>
+      </section>
+
+      <p class="notice" role="status" data-notice></p>
+    </div>
+
+    <template data-message-template>
+      <li class="message">
+        <p class="message-meta">
+          <span class="message-sender"></span> <time class="message-time"></time>
+        </p>
+        <p class="message-text"></p>
+        <p class="message-status"><span class="message-status-label"></span></p>
+      </li>
+    </template>
+  </body>
+</html>

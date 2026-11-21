@@ -1,5 +1,7 @@
 import type { Timers } from '../connection/messaging.connection.ts';
 
+import { messages } from '../../i18n/i18n.messages.ts';
+
 export type TypingThrottleDeps = {
   /** After this long without a keystroke, `active:false` is sent. */
   readonly idleMs: number;
@@ -96,12 +98,5 @@ export class TypingThrottle {
 }
 
 export function typingLabel(names: readonly string[]): string {
-  const [first, second] = names;
-  if (first === undefined) {
-    return '';
-  }
-  if (second === undefined) {
-    return `${first} is typing…`;
-  }
-  return names.length === 2 ? `${first} and ${second} are typing…` : 'Several people are typing…';
+  return messages().typing(names);
 }

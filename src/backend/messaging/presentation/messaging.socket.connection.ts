@@ -21,6 +21,7 @@ export class SocketConnection {
   private lastPong: number;
   private pending: Promise<void> = Promise.resolve();
   private released = false;
+  private removalCount = 0;
   private readonly roomIds = new Set<string>();
 
   constructor(userId: UserId, sessionId: string, expiresAt: number, now: number) {
@@ -62,8 +63,19 @@ export class SocketConnection {
     return true;
   }
 
+  /**
+   * Records that the user left `roomId`; false when the socket was not subscribed to it. Every call
+   * counts in `removals`, even before the socket joined, so a membership lookup that was in flight
+   * can tell that its answer is stale.
+   */
   leave(roomId: string): boolean {
+    this.removalCount += 1;
     return this.roomIds.delete(roomId);
+  }
+
+  /** How many removals this socket has seen; it only grows. */
+  get removals(): number {
+    return this.removalCount;
   }
 
   pong(now: number): void {

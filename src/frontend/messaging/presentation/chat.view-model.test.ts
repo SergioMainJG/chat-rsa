@@ -8,7 +8,6 @@ import {
   toMessageItems,
   toRoomHeader,
   toRoomItems,
-  UNDECRYPTABLE_TEXT,
 } from './chat.view-model.ts';
 
 const SELF = 1;
@@ -94,8 +93,7 @@ describe('toMessageItems', () => {
       statuses: new Map(),
     });
 
-    expect(item).toMatchObject({ text: UNDECRYPTABLE_TEXT, undecryptable: true });
-    expect(UNDECRYPTABLE_TEXT).toBe('Unable to decrypt');
+    expect(item).toMatchObject({ text: 'Unable to decrypt', undecryptable: true });
   });
 
   test('a refused own message is flagged as failed and keeps its time label', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { setLocaleFromLang } from '../../i18n/i18n.messages.ts';
 import { guardRoute, sessionHintOf } from './auth.guard.ts';
 
 const NOW_MS = Date.UTC(2026, 10, 13, 12);
@@ -18,11 +19,21 @@ describe('guardRoute (reads the chat_rsa_session_hint cookie, never the token)',
     ['a malformed hint', 'not-a-number'],
     ['a JWT instead of a number', 'a.b.c'],
   ])('a members-only page sends %s to /sign-in', (_case, hint) => {
-    expect(guardRoute('members', hint, NOW_MS)).toEqual({ kind: 'redirect', path: '/sign-in' });
+    expect(guardRoute('members', hint, NOW_MS)).toEqual({ kind: 'redirect', path: '/en/sign-in' });
   });
 
   test('a guests-only page sends a live session to /chat', () => {
-    expect(guardRoute('guests', LIVE, NOW_MS)).toEqual({ kind: 'redirect', path: '/chat' });
+    expect(guardRoute('guests', LIVE, NOW_MS)).toEqual({ kind: 'redirect', path: '/en/chat' });
+  });
+
+  test('a Spanish page redirects within Spanish', () => {
+    setLocaleFromLang('es');
+    try {
+      expect(guardRoute('members', null, NOW_MS)).toEqual({ kind: 'redirect', path: '/es/sign-in' });
+      expect(guardRoute('guests', LIVE, NOW_MS)).toEqual({ kind: 'redirect', path: '/es/chat' });
+    } finally {
+      setLocaleFromLang('en');
+    }
   });
 
   test.each([
