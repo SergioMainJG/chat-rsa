@@ -1,0 +1,27 @@
+# Only package.json, bun.lock, bunfig.toml, tsconfig.json, sql/, public/ and src/ are copied;
+# this keeps everything else (and every secret) out of the build context.
+.git/
+.github/
+.env
+.env.*
+node_modules/
+dist/
+coverage/
+reports/
+bugs/
+odd/
+docs/
+test/
+scripts/
+logs/
+*.log
+junit.xml
+test-load-*.xml
+.codegraph/
+.claude/
+.agents/
+.atl/
+.idea/
+.vscode/
+**/*.test.ts
+**/*.test-support.ts
